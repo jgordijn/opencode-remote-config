@@ -1,0 +1,29 @@
+{
+  "name": "OpenCode Remote Config",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers-extra/features/fd:1": {},
+    "ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+    "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {}
+  },
+  "mounts": [
+    "type=bind,source=/run/host-services/ssh-auth.sock,target=/run/host-services/ssh-auth.sock",
+    "source=${localEnv:HOME}/.config/opencode,target=/home/vscode/.config/opencode,type=bind",
+    "source=${localEnv:HOME}/.local/share/opencode,target=/home/vscode/.local/share/opencode,type=bind",
+    "source=${localEnv:HOME}/.secrets,target=/home/vscode/.secrets,type=bind",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig.host,type=bind,readonly=true",
+    "source=${localEnv:HOME}/.gitignore_global,target=/home/vscode/.gitignore_global,type=bind,readonly=true"
+  ],
+  "containerEnv": {
+    "OPENCODE_PERMISSION": "{\"*\": \"allow\", \"external_directory\": \"allow\"}",
+    "SSH_AUTH_SOCK": "/run/host-services/ssh-auth.sock",
+    "TERM": "xterm-256color",
+  },
+  "postCreateCommand": ".devcontainer/scripts/setup.sh",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+  "workspaceFolder": "${localWorkspaceFolder}"
+}
