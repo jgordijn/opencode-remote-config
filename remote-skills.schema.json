@@ -26,6 +26,56 @@
     }
   },
   "definitions": {
+    "filterConfig": {
+      "description": "Filter configuration with include or exclude list",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Include specific items by name",
+          "additionalProperties": false,
+          "required": ["include"],
+          "properties": {
+            "include": {
+              "type": "array",
+              "description": "List of item names to include",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Import all except the listed items",
+          "additionalProperties": false,
+          "required": ["exclude"],
+          "properties": {
+            "exclude": {
+              "type": "array",
+              "description": "List of item names to exclude",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    },
+    "importConfig": {
+      "description": "Import configuration: '*' for all, or an object with include/exclude arrays",
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "*",
+          "description": "Import all items from the repository"
+        },
+        {
+          "$ref": "#/definitions/filterConfig"
+        }
+      ]
+    },
     "repository": {
       "type": "object",
       "description": "Configuration for a single Git repository",
@@ -42,89 +92,24 @@
           "description": "Git ref to checkout (branch, tag, or commit SHA). Defaults to repository's default branch"
         },
         "skills": {
-          "description": "Skills to import. Use '*' for all skills, or an array of skill names",
-          "oneOf": [
-            {
-              "type": "string",
-              "const": "*",
-              "description": "Import all skills from the repository"
-            },
-            {
-              "type": "array",
-              "description": "List of specific skill names to import",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "description": "Skills to import. Use '*' for all, { include: [...] } for specific skills, or { exclude: [...] } to import all except listed",
+          "$ref": "#/definitions/importConfig"
         },
         "agents": {
-          "description": "Agents to import. Use '*' for all agents, or an array of agent names",
-          "oneOf": [
-            {
-              "type": "string",
-              "const": "*",
-              "description": "Import all agents from the repository"
-            },
-            {
-              "type": "array",
-              "description": "List of specific agent names to import",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "description": "Agents to import. Use '*' for all, { include: [...] } for specific agents, or { exclude: [...] } to import all except listed",
+          "$ref": "#/definitions/importConfig"
         },
         "commands": {
-          "description": "Commands (slash commands) to import. Use '*' for all commands, or an array of command names",
-          "oneOf": [
-            {
-              "type": "string",
-              "const": "*",
-              "description": "Import all commands from the repository"
-            },
-            {
-              "type": "array",
-              "description": "List of specific command names to import",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "description": "Commands (slash commands) to import. Use '*' for all, { include: [...] } for specific commands, or { exclude: [...] } to import all except listed",
+          "$ref": "#/definitions/importConfig"
         },
         "plugins": {
-          "description": "Plugins (hook files) to import. Use '*' for all plugins, or an array of plugin names. Plugins must be self-contained (no local imports).",
-          "oneOf": [
-            {
-              "type": "string",
-              "const": "*",
-              "description": "Import all plugins from the repository"
-            },
-            {
-              "type": "array",
-              "description": "List of specific plugin names to import",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "description": "Plugins (hook files) to import. Use '*' for all, { include: [...] } for specific plugins, or { exclude: [...] } to import all except listed. Plugins must be self-contained (no local imports).",
+          "$ref": "#/definitions/importConfig"
         },
         "instructions": {
-          "description": "Instructions to import from manifest.json. Use '*' for all instructions, or an array of instruction names (relative paths as defined in manifest.json)",
-          "oneOf": [
-            {
-              "type": "string",
-              "const": "*",
-              "description": "Import all instructions from the repository's manifest.json"
-            },
-            {
-              "type": "array",
-              "description": "List of specific instruction names to import",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "description": "Instructions to import from manifest.json. Use '*' for all, { include: [...] } for specific instructions, or { exclude: [...] } to import all except listed",
+          "$ref": "#/definitions/importConfig"
         }
       }
     }
