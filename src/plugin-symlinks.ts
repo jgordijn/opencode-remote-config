@@ -71,19 +71,26 @@ export function createPluginSymlink(plugin: PluginInfo, pluginDir: string = DEFA
     targetPath: plugin.path,
   }
   
-  try {
-    ensurePluginDir(pluginDir)
-    
-    // Remove existing symlink if it exists
-    if (fs.existsSync(symlinkPath)) {
-      fs.unlinkSync(symlinkPath)
-    }
-    
-    // Create symlink
-    fs.symlinkSync(plugin.path, symlinkPath)
-  } catch (err) {
-    result.error = err instanceof Error ? err.message : String(err)
-  }
+   try {
+     ensurePluginDir(pluginDir)
+     
+     // Remove existing symlink if it exists (including broken symlinks)
+     // fs.existsSync returns false for broken symlinks, so use lstatSync instead
+     try {
+       fs.lstatSync(symlinkPath)
+       fs.unlinkSync(symlinkPath)
+     } catch (err) {
+       // File doesn't exist, which is fine
+       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+         throw err
+       }
+     }
+     
+     // Create symlink
+     fs.symlinkSync(plugin.path, symlinkPath)
+   } catch (err) {
+     result.error = err instanceof Error ? err.message : String(err)
+   }
   
   return result
 }

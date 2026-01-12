@@ -138,35 +138,72 @@ describe("plugin-symlinks", () => {
       expect(fs.readlinkSync(symlinkPath)).toBe(sourceFile)
     })
 
-    test("replaces existing symlink", () => {
-      const sourceFile1 = path.join(testSourceDir, "source1.ts")
-      const sourceFile2 = path.join(testSourceDir, "source2.ts")
-      fs.writeFileSync(sourceFile1, `export default { v: 1 }`)
-      fs.writeFileSync(sourceFile2, `export default { v: 2 }`)
-      
-      const plugin1: PluginInfo = {
-        name: "plugin",
-        path: sourceFile1,
-        repoShortName: "repo",
-        extension: ".ts",
-      }
-      
-      const plugin2: PluginInfo = {
-        name: "plugin",
-        path: sourceFile2,
-        repoShortName: "repo",
-        extension: ".ts",
-      }
-      
-      createPluginSymlink(plugin1, testPluginDir)
-      const result = createPluginSymlink(plugin2, testPluginDir)
-      
-      expect(result.error).toBeUndefined()
-      
-      // Verify symlink points to new source
-      const symlinkPath = path.join(testPluginDir, "_remote_repo_plugin.ts")
-      expect(fs.readlinkSync(symlinkPath)).toBe(sourceFile2)
-    })
+     test("replaces existing symlink", () => {
+       const sourceFile1 = path.join(testSourceDir, "source1.ts")
+       const sourceFile2 = path.join(testSourceDir, "source2.ts")
+       fs.writeFileSync(sourceFile1, `export default { v: 1 }`)
+       fs.writeFileSync(sourceFile2, `export default { v: 2 }`)
+       
+       const plugin1: PluginInfo = {
+         name: "plugin",
+         path: sourceFile1,
+         repoShortName: "repo",
+         extension: ".ts",
+       }
+       
+       const plugin2: PluginInfo = {
+         name: "plugin",
+         path: sourceFile2,
+         repoShortName: "repo",
+         extension: ".ts",
+       }
+       
+       createPluginSymlink(plugin1, testPluginDir)
+       const result = createPluginSymlink(plugin2, testPluginDir)
+       
+       expect(result.error).toBeUndefined()
+       
+       // Verify symlink points to new source
+       const symlinkPath = path.join(testPluginDir, "_remote_repo_plugin.ts")
+       expect(fs.readlinkSync(symlinkPath)).toBe(sourceFile2)
+     })
+
+     test("handles broken symlinks (race condition)", () => {
+       // This simulates the race condition where a symlink exists but points to a
+       // now-nonexistent target (e.g., from a previous failed sync)
+       const sourceFile1 = path.join(testSourceDir, "source1.ts")
+       const sourceFile2 = path.join(testSourceDir, "source2.ts")
+       fs.writeFileSync(sourceFile1, `export default { v: 1 }`)
+       fs.writeFileSync(sourceFile2, `export default { v: 2 }`)
+       
+       const symlinkPath = path.join(testPluginDir, "_remote_repo_plugin.ts")
+       
+       // Create a symlink to a file that will be deleted
+       fs.symlinkSync(sourceFile1, symlinkPath)
+       expect(fs.existsSync(symlinkPath)).toBe(true)
+       
+       // Delete the target to make the symlink broken
+       fs.unlinkSync(sourceFile1)
+       expect(fs.existsSync(symlinkPath)).toBe(false) // Broken symlink
+       expect(fs.lstatSync(symlinkPath).isSymbolicLink()).toBe(true) // But it's still a symlink
+       
+       // Now try to create a new symlink to a different target
+       const plugin: PluginInfo = {
+         name: "plugin",
+         path: sourceFile2,
+         repoShortName: "repo",
+         extension: ".ts",
+       }
+       
+       const result = createPluginSymlink(plugin, testPluginDir)
+       
+       // Should succeed (not fail with EEXIST)
+       expect(result.error).toBeUndefined()
+       
+       // Verify symlink now points to the new source
+       expect(fs.readlinkSync(symlinkPath)).toBe(sourceFile2)
+       expect(fs.existsSync(symlinkPath)).toBe(true)
+     })
 
     test("reports error for non-existent source", () => {
       const plugin: PluginInfo = {
