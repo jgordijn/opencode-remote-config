@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/skill-marketplace/manifest.json",
+  "title": "OpenCode Remote Skills Manifest",
+  "description": "Manifest file for defining instructions and other resources to be imported by the remote-skills plugin",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for editor support"
+    },
+    "instructions": {
+      "type": "array",
+      "description": "List of markdown instruction files to include. Paths are relative to the manifest.json location. This field is optional; omit or use empty array to include no instructions.",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!\\.?\\./)(?!.*/\\.\\.)(?!/).*\\.md$",
+        "description": "Relative path to a markdown file (must end with .md, no directory traversal allowed)"
+      },
+      "default": []
+    }
+  }
+}
