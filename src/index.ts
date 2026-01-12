@@ -4,12 +4,13 @@ import { syncRepositories, type SyncResult } from "./git"
 import type { AgentConfig } from "./agent"
 import type { CommandConfig } from "./command"
 import {
-  createSymlinksForRepo,
-  cleanupStaleSymlinks,
+  createInstallsForRepo,
+  cleanupStaleInstalls,
   hasLocalConflict,
   ensureGitignore,
   ensurePluginsDir,
-} from "./symlinks"
+  type InstallMethod,
+} from "./install"
 import {
   createPluginSymlinks,
   getRemotePluginSymlinks,
@@ -58,7 +59,7 @@ async function performSync(
   // Sync all repositories
   const results = await syncRepositories(config.repositories)
 
-  // Track skills we're creating symlinks for (to clean up stale ones)
+  // Track skills we're installing (to clean up stale ones)
   const currentSkills = new Set<string>()
   const skippedConflicts: string[] = []
   let totalSkills = 0
@@ -71,7 +72,7 @@ async function performSync(
     }
 
     // Filter out conflicting skills
-    const skillsToLink = result.skills.filter((skill) => {
+    const skillsToInstall = result.skills.filter((skill) => {
       if (hasLocalConflict(skill.name)) {
         skippedConflicts.push(skill.name)
         return false
@@ -79,31 +80,31 @@ async function performSync(
       return true
     })
 
-    // Update result with filtered skills for symlink creation
-    const filteredResult = { ...result, skills: skillsToLink }
+    // Update result with filtered skills for install
+    const filteredResult = { ...result, skills: skillsToInstall }
 
-    // Create symlinks
-    const symlinkResults = createSymlinksForRepo(filteredResult)
+    // Install skills (using configured method: link or copy)
+    const installResults = await createInstallsForRepo(filteredResult, config.installMethod)
 
-    // Track which skills we created
-    for (const sr of symlinkResults) {
+    // Track which skills we installed
+    for (const sr of installResults) {
       if (!sr.error) {
         currentSkills.add(`${result.shortName}/${sr.skillName}`)
         totalSkills++
       } else {
-        logError(`✗ Failed to create symlink for ${sr.skillName}: ${sr.error}`)
+        logError(`✗ Failed to install skill ${sr.skillName}: ${sr.error}`)
       }
     }
 
-    const skillCount = skillsToLink.length
+    const skillCount = skillsToInstall.length
     const status = result.updated ? "✓" : "✓"
     log(`${status} ${result.shortName} (${result.ref}) - ${skillCount} skills`)
   }
 
-  // Clean up stale symlinks
-  const cleanup = cleanupStaleSymlinks(currentSkills)
+  // Clean up stale installs (works for both symlinks and copied directories)
+  const cleanup = cleanupStaleInstalls(currentSkills)
   if (cleanup.removed.length > 0) {
-    log(`Cleaned up ${cleanup.removed.length} stale symlinks`)
+    log(`Cleaned up ${cleanup.removed.length} stale skill installs`)
   }
 
   // Log conflicts
@@ -237,6 +238,11 @@ export const RemoteSkillsPlugin: Plugin = async (ctx) => {
   if (pluginConfig.repositories.length === 0) {
     // No repositories configured, nothing to do
     return {}
+  }
+
+  // Log the installation method being used
+  if (pluginConfig.installMethod === "copy") {
+    log("Using copy mode for skill installation")
   }
 
   // Ensure the _plugins directory exists

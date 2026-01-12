@@ -2,6 +2,10 @@ import * as path from "path"
 import * as fs from "fs"
 import { $ } from "bun"
 import type { SkillInfo, SyncResult } from "./git"
+import { syncDirectory } from "./copy"
+
+/** How to install skills: symlink or copy */
+export type InstallMethod = "link" | "copy"
 
 /** Base directory for OpenCode skills */
 const SKILL_BASE = path.join(
@@ -15,15 +19,20 @@ const SKILL_BASE = path.join(
 const PLUGINS_DIR = path.join(SKILL_BASE, "_plugins")
 
 /**
- * Information about a symlink operation
+ * Information about an install operation (symlink or copy)
  */
-export interface SymlinkResult {
+export interface InstallResult {
   skillName: string
   sourcePath: string
   targetPath: string
   created: boolean
   error?: string
 }
+
+/**
+ * @deprecated Use InstallResult instead
+ */
+export type SymlinkResult = InstallResult
 
 /**
  * Information about cleaning up stale symlinks
@@ -34,11 +43,16 @@ export interface CleanupResult {
 }
 
 /**
- * Get the path where a skill symlink should be created
+ * Get the path where a skill should be installed
  */
-export function getSymlinkPath(repoShortName: string, skillName: string): string {
+export function getInstallPath(repoShortName: string, skillName: string): string {
   return path.join(PLUGINS_DIR, repoShortName, skillName)
 }
+
+/**
+ * @deprecated Use getInstallPath instead
+ */
+export const getSymlinkPath = getInstallPath
 
 /**
  * Ensure the _plugins directory structure exists
@@ -48,18 +62,53 @@ export function ensurePluginsDir(): void {
 }
 
 /**
- * Create a symlink for a skill
- * 
- * @param skill The skill to create a symlink for
- * @param repoShortName The short name of the repository
- * @returns Result of the symlink operation
+ * Internal helper: create a symlink for a skill (sync).
+ * Used by both createSkillInstall (for link mode) and deprecated createSkillSymlink.
  */
-export function createSkillSymlink(
+function createSymlinkSync(
+  sourcePath: string,
+  targetPath: string
+): { created: boolean; error?: string } {
+  // Check if symlink already exists
+  if (fs.existsSync(targetPath)) {
+    const stats = fs.lstatSync(targetPath)
+    
+    if (stats.isSymbolicLink()) {
+      const existingTarget = fs.readlinkSync(targetPath)
+      
+      // If pointing to same location, nothing to do
+      if (existingTarget === sourcePath) {
+        return { created: false }
+      }
+      
+      // Remove old symlink
+      fs.unlinkSync(targetPath)
+    } else {
+      // Not a symlink, don't overwrite
+      return { created: false, error: `Path exists and is not a symlink: ${targetPath}` }
+    }
+  }
+  
+  // Create the symlink
+  fs.symlinkSync(sourcePath, targetPath, "dir")
+  return { created: true }
+}
+
+/**
+ * Install a skill (symlink or copy)
+ * 
+ * @param skill The skill to install
+ * @param repoShortName The short name of the repository
+ * @param installMethod How to install: "link" (symlink) or "copy" (file copy)
+ * @returns Result of the install operation
+ */
+export async function createSkillInstall(
   skill: SkillInfo,
-  repoShortName: string
-): SymlinkResult {
-  const targetPath = getSymlinkPath(repoShortName, skill.name)
-  const result: SymlinkResult = {
+  repoShortName: string,
+  installMethod: InstallMethod = "link"
+): Promise<InstallResult> {
+  const targetPath = getInstallPath(repoShortName, skill.name)
+  const result: InstallResult = {
     skillName: skill.name,
     sourcePath: skill.path,
     targetPath,
@@ -70,30 +119,18 @@ export function createSkillSymlink(
     // Ensure parent directory exists
     fs.mkdirSync(path.dirname(targetPath), { recursive: true })
     
-    // Check if symlink already exists
-    if (fs.existsSync(targetPath)) {
-      const stats = fs.lstatSync(targetPath)
-      
-      if (stats.isSymbolicLink()) {
-        const existingTarget = fs.readlinkSync(targetPath)
-        
-        // If pointing to same location, nothing to do
-        if (existingTarget === skill.path) {
-          return result
-        }
-        
-        // Remove old symlink
-        fs.unlinkSync(targetPath)
-      } else {
-        // Not a symlink, don't overwrite
-        result.error = `Path exists and is not a symlink: ${targetPath}`
-        return result
+    if (installMethod === "copy") {
+      // Copy mode: use syncDirectory
+      await syncDirectory(skill.path, targetPath)
+      result.created = true
+    } else {
+      // Link mode: delegate to shared helper
+      const symlinkResult = createSymlinkSync(skill.path, targetPath)
+      result.created = symlinkResult.created
+      if (symlinkResult.error) {
+        result.error = symlinkResult.error
       }
     }
-    
-    // Create the symlink
-    fs.symlinkSync(skill.path, targetPath, "dir")
-    result.created = true
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err)
   }
@@ -102,12 +139,67 @@ export function createSkillSymlink(
 }
 
 /**
- * Create symlinks for all skills from a sync result
+ * @deprecated Use createSkillInstall instead
  */
-export function createSymlinksForRepo(syncResult: SyncResult): SymlinkResult[] {
+export function createSkillSymlink(
+  skill: SkillInfo,
+  repoShortName: string
+): InstallResult {
+  const targetPath = getInstallPath(repoShortName, skill.name)
+  const result: InstallResult = {
+    skillName: skill.name,
+    sourcePath: skill.path,
+    targetPath,
+    created: false,
+  }
+  
+  try {
+    // Ensure parent directory exists
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+    
+    // Delegate to shared helper
+    const symlinkResult = createSymlinkSync(skill.path, targetPath)
+    result.created = symlinkResult.created
+    if (symlinkResult.error) {
+      result.error = symlinkResult.error
+    }
+  } catch (err) {
+    result.error = err instanceof Error ? err.message : String(err)
+  }
+  
+  return result
+}
+
+/**
+ * Install all skills from a sync result
+ * 
+ * @param syncResult The sync result containing skills to install
+ * @param installMethod How to install: "link" (symlink) or "copy" (file copy)
+ * @returns Results of all install operations
+ */
+export async function createInstallsForRepo(
+  syncResult: SyncResult,
+  installMethod: InstallMethod = "link"
+): Promise<InstallResult[]> {
   ensurePluginsDir()
   
-  const results: SymlinkResult[] = []
+  const results: InstallResult[] = []
+  
+  for (const skill of syncResult.skills) {
+    const result = await createSkillInstall(skill, syncResult.shortName, installMethod)
+    results.push(result)
+  }
+  
+  return results
+}
+
+/**
+ * @deprecated Use createInstallsForRepo instead
+ */
+export function createSymlinksForRepo(syncResult: SyncResult): InstallResult[] {
+  ensurePluginsDir()
+  
+  const results: InstallResult[] = []
   
   for (const skill of syncResult.skills) {
     const result = createSkillSymlink(skill, syncResult.shortName)
@@ -118,7 +210,50 @@ export function createSymlinksForRepo(syncResult: SyncResult): SymlinkResult[] {
 }
 
 /**
- * Get all existing symlinks in the _plugins directory
+ * Get all existing installed skills in the _plugins directory
+ * Returns both symlinks and copied directories (detects SKILL.md files)
+ */
+export function getExistingInstalls(): Map<string, string> {
+  const installs = new Map<string, string>()
+  
+  if (!fs.existsSync(PLUGINS_DIR)) {
+    return installs
+  }
+  
+  // Scan repo directories
+  const repoEntries = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true })
+  
+  for (const repoEntry of repoEntries) {
+    if (repoEntry.name.startsWith(".") || !repoEntry.isDirectory()) continue
+    
+    const repoPath = path.join(PLUGINS_DIR, repoEntry.name)
+    const skillEntries = fs.readdirSync(repoPath, { withFileTypes: true })
+    
+    for (const skillEntry of skillEntries) {
+      if (skillEntry.name.startsWith(".")) continue
+      
+      const fullPath = path.join(repoPath, skillEntry.name)
+      const relativePath = `${repoEntry.name}/${skillEntry.name}`
+      
+      if (skillEntry.isSymbolicLink()) {
+        // Symlink mode
+        const target = fs.readlinkSync(fullPath)
+        installs.set(relativePath, target)
+      } else if (skillEntry.isDirectory()) {
+        // Copy mode: check if it looks like an installed skill (has SKILL.md)
+        const skillMdPath = path.join(fullPath, "SKILL.md")
+        if (fs.existsSync(skillMdPath)) {
+          installs.set(relativePath, fullPath)
+        }
+      }
+    }
+  }
+  
+  return installs
+}
+
+/**
+ * @deprecated Use getExistingInstalls instead
  */
 export function getExistingSymlinks(): Map<string, string> {
   const symlinks = new Map<string, string>()
@@ -150,25 +285,35 @@ export function getExistingSymlinks(): Map<string, string> {
 }
 
 /**
- * Remove symlinks that are no longer needed
+ * Remove installed skills that are no longer needed
+ * Works for both symlinks and copied directories
  * 
  * @param currentSkills Set of skill paths that should exist (format: "repo/skill")
  * @returns Cleanup result
  */
-export function cleanupStaleSymlinks(currentSkills: Set<string>): CleanupResult {
+export function cleanupStaleInstalls(currentSkills: Set<string>): CleanupResult {
   const result: CleanupResult = {
     removed: [],
     errors: [],
   }
   
-  const existingSymlinks = getExistingSymlinks()
+  const existingInstalls = getExistingInstalls()
   
-  for (const [relativePath] of existingSymlinks) {
+  for (const [relativePath] of existingInstalls) {
     if (!currentSkills.has(relativePath)) {
       const fullPath = path.join(PLUGINS_DIR, relativePath)
       
       try {
-        fs.unlinkSync(fullPath)
+        const stats = fs.lstatSync(fullPath)
+        
+        if (stats.isSymbolicLink()) {
+          // Remove symlink
+          fs.unlinkSync(fullPath)
+        } else if (stats.isDirectory()) {
+          // Remove copied directory
+          fs.rmSync(fullPath, { recursive: true, force: true })
+        }
+        
         result.removed.push(relativePath)
         
         // Try to remove empty parent directories
@@ -196,6 +341,11 @@ export function cleanupStaleSymlinks(currentSkills: Set<string>): CleanupResult 
   
   return result
 }
+
+/**
+ * @deprecated Use cleanupStaleInstalls instead
+ */
+export const cleanupStaleSymlinks = cleanupStaleInstalls
 
 /**
  * Check if a skill name conflicts with a local (non-plugin) skill
