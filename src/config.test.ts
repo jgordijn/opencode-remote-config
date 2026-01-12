@@ -227,6 +227,41 @@ describe("config", () => {
       expect(result.repositories).toHaveLength(1)
       expect(result.sync).toBe("background")
     })
+
+    describe("installMethod", () => {
+      test("defaults to 'link' when not specified", () => {
+        const config = parseConfig({
+          repositories: [],
+        })
+        expect(config.installMethod).toBe("link")
+      })
+
+      test("accepts 'link' value", () => {
+        const config = parseConfig({
+          installMethod: "link",
+          repositories: [],
+        })
+        expect(config.installMethod).toBe("link")
+      })
+
+      test("accepts 'copy' value", () => {
+        const config = parseConfig({
+          installMethod: "copy",
+          repositories: [],
+        })
+        expect(config.installMethod).toBe("copy")
+      })
+
+      test("rejects invalid installMethod values", () => {
+        // This should fall back to default config due to validation error
+        const config = parseConfig({
+          installMethod: "invalid",
+          repositories: [],
+        })
+        // parseConfig returns DEFAULT_CONFIG on validation failure
+        expect(config.installMethod).toBe("link")
+      })
+    })
   })
 
   describe("getRepoShortName", () => {
