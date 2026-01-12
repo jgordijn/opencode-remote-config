@@ -125,6 +125,13 @@ export const RemoteSkillsConfigSchema = z.object({
    * - "background": Sync in background, notify user if updates available
    */
   sync: z.enum(["blocking", "background"]).default("blocking"),
+  
+  /**
+   * How to install skills and plugins from remote repositories:
+   * - "link": Create symlinks (default, fast, but may not work in containers)
+   * - "copy": Copy files (works everywhere, uses rsync if available)
+   */
+  installMethod: z.enum(["link", "copy"]).default("link"),
 }).strict()
 
 export type RemoteSkillsConfig = z.infer<typeof RemoteSkillsConfigSchema>
@@ -135,6 +142,7 @@ export type RemoteSkillsConfig = z.infer<typeof RemoteSkillsConfigSchema>
 export const DEFAULT_CONFIG: RemoteSkillsConfig = {
   repositories: [],
   sync: "blocking",
+  installMethod: "link",
 }
 
 /**

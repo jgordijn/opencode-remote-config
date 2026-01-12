@@ -158,6 +158,7 @@ describe("config", () => {
       if (result.success) {
         expect(result.data.repositories).toEqual([])
         expect(result.data.sync).toBe("blocking")
+        expect(result.data.installMethod).toBe("link")
       }
     })
 
@@ -165,6 +166,12 @@ describe("config", () => {
       expect(RemoteSkillsConfigSchema.safeParse({ sync: "blocking" }).success).toBe(true)
       expect(RemoteSkillsConfigSchema.safeParse({ sync: "background" }).success).toBe(true)
       expect(RemoteSkillsConfigSchema.safeParse({ sync: "invalid" }).success).toBe(false)
+    })
+
+    test("validates installMethod modes", () => {
+      expect(RemoteSkillsConfigSchema.safeParse({ installMethod: "link" }).success).toBe(true)
+      expect(RemoteSkillsConfigSchema.safeParse({ installMethod: "copy" }).success).toBe(true)
+      expect(RemoteSkillsConfigSchema.safeParse({ installMethod: "invalid" }).success).toBe(false)
     })
 
     test("accepts $schema key for editor support", () => {
@@ -195,19 +202,20 @@ describe("config", () => {
 
   describe("parseConfig", () => {
     test("returns defaults for null/undefined", () => {
-      expect(parseConfig(null)).toEqual({ repositories: [], sync: "blocking" })
-      expect(parseConfig(undefined)).toEqual({ repositories: [], sync: "blocking" })
+      expect(parseConfig(null)).toEqual({ repositories: [], sync: "blocking", installMethod: "link" })
+      expect(parseConfig(undefined)).toEqual({ repositories: [], sync: "blocking", installMethod: "link" })
     })
 
     test("returns defaults for non-object", () => {
-      expect(parseConfig("string")).toEqual({ repositories: [], sync: "blocking" })
-      expect(parseConfig(123)).toEqual({ repositories: [], sync: "blocking" })
+      expect(parseConfig("string")).toEqual({ repositories: [], sync: "blocking", installMethod: "link" })
+      expect(parseConfig(123)).toEqual({ repositories: [], sync: "blocking", installMethod: "link" })
     })
 
     test("returns defaults for empty object", () => {
       const result = parseConfig({})
       expect(result.repositories).toEqual([])
       expect(result.sync).toBe("blocking")
+      expect(result.installMethod).toBe("link")
     })
 
     test("parses valid config directly (no wrapper key)", () => {
