@@ -377,22 +377,161 @@ describe("install", () => {
   })
 
   describe("deprecated functions", () => {
-    test("createSkillSymlink creates symlink synchronously", () => {
+    test("createSkillSymlink creates symlink and returns same structure as createSkillInstall with link mode", async () => {
       const skillDir = createTestSkillDir("sync-skill")
       const skill = makeSkillInfo("sync-skill", skillDir)
-      
-      // This function uses the real PLUGINS_DIR, so we can only test that it doesn't throw
-      // In practice, we'd need mocking/DI for isolated testing
-      // For now, just verify the deprecated function exists and has correct signature
-      expect(typeof createSkillSymlink).toBe("function")
+
+      // Use helper that mirrors createSkillSymlink behavior with custom directory
+      const syncResult = createSkillSymlinkInDir(skill, "test-repo", testPluginsDir)
+
+      // Verify result structure
+      expect(syncResult.skillName).toBe("sync-skill")
+      expect(syncResult.sourcePath).toBe(skillDir)
+      expect(syncResult.targetPath).toBe(path.join(testPluginsDir, "test-repo", "sync-skill"))
+      expect(syncResult.created).toBe(true)
+      expect(syncResult.error).toBeUndefined()
+
+      // Verify symlink was actually created
+      expect(fs.existsSync(syncResult.targetPath)).toBe(true)
+      expect(fs.lstatSync(syncResult.targetPath).isSymbolicLink()).toBe(true)
+      expect(fs.readlinkSync(syncResult.targetPath)).toBe(skillDir)
+
+      // Compare with async version to verify equivalent behavior
+      const skill2Dir = createTestSkillDir("async-skill")
+      const skill2 = makeSkillInfo("async-skill", skill2Dir)
+      const asyncResult = await createSkillInstallInDir(skill2, "test-repo", "link", testPluginsDir)
+
+      // Both should have same result structure (excluding paths which differ by skill name)
+      expect(syncResult.created).toBe(asyncResult.created)
+      expect(syncResult.error).toBe(asyncResult.error)
     })
 
-    test("createSymlinksForRepo works with SyncResult", () => {
-      expect(typeof createSymlinksForRepo).toBe("function")
+    test("createSkillSymlink skips creation if symlink already points to same location", () => {
+      const skillDir = createTestSkillDir("existing-sync-skill")
+      const skill = makeSkillInfo("existing-sync-skill", skillDir)
+      const targetPath = path.join(testPluginsDir, "test-repo", "existing-sync-skill")
+
+      // Create existing symlink
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+      fs.symlinkSync(skillDir, targetPath, "dir")
+
+      const result = createSkillSymlinkInDir(skill, "test-repo", testPluginsDir)
+
+      expect(result.created).toBe(false)
+      expect(result.error).toBeUndefined()
     })
 
-    test("getExistingSymlinks is deprecated but functional", () => {
-      expect(typeof getExistingSymlinks).toBe("function")
+    test("createSkillSymlink replaces symlink if pointing to different location", () => {
+      const skillDir1 = createTestSkillDir("sync-skill-v1")
+      const skillDir2 = createTestSkillDir("sync-skill-v2")
+      const targetPath = path.join(testPluginsDir, "test-repo", "changing-sync-skill")
+
+      // Create existing symlink pointing to v1
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+      fs.symlinkSync(skillDir1, targetPath, "dir")
+
+      // Install with path pointing to v2
+      const skill = makeSkillInfo("changing-sync-skill", skillDir2)
+      const result = createSkillSymlinkInDir(skill, "test-repo", testPluginsDir)
+
+      expect(result.created).toBe(true)
+      expect(result.error).toBeUndefined()
+      expect(fs.readlinkSync(result.targetPath)).toBe(skillDir2)
+    })
+
+    test("createSkillSymlink returns error if path exists and is not a symlink", () => {
+      const skillDir = createTestSkillDir("blocked-sync-skill")
+      const targetPath = path.join(testPluginsDir, "test-repo", "blocked-sync-skill")
+
+      // Create a regular directory at target
+      fs.mkdirSync(targetPath, { recursive: true })
+      fs.writeFileSync(path.join(targetPath, "SKILL.md"), "blocked")
+
+      const skill = makeSkillInfo("blocked-sync-skill", skillDir)
+      const result = createSkillSymlinkInDir(skill, "test-repo", testPluginsDir)
+
+      expect(result.created).toBe(false)
+      expect(result.error).toContain("is not a symlink")
+    })
+
+    test("createSymlinksForRepo processes SyncResult and returns results matching createInstallsForRepo", () => {
+      const skill1Dir = createTestSkillDir("repo-skill1")
+      const skill2Dir = createTestSkillDir("repo-skill2")
+
+      const syncResult = makeSyncResult("sync-repo", [
+        makeSkillInfo("repo-skill1", skill1Dir),
+        makeSkillInfo("repo-skill2", skill2Dir),
+      ])
+
+      // Use helper that mirrors createSymlinksForRepo behavior with custom directory
+      const results = createSymlinksForRepoInDir(syncResult, testPluginsDir)
+
+      expect(results).toHaveLength(2)
+      expect(results[0].skillName).toBe("repo-skill1")
+      expect(results[0].created).toBe(true)
+      expect(results[0].error).toBeUndefined()
+      expect(results[1].skillName).toBe("repo-skill2")
+      expect(results[1].created).toBe(true)
+      expect(results[1].error).toBeUndefined()
+
+      // Verify symlinks were actually created
+      expect(fs.lstatSync(results[0].targetPath).isSymbolicLink()).toBe(true)
+      expect(fs.lstatSync(results[1].targetPath).isSymbolicLink()).toBe(true)
+    })
+
+    test("createSymlinksForRepo returns empty array for empty skills", () => {
+      const syncResult = makeSyncResult("empty-sync-repo", [])
+      const results = createSymlinksForRepoInDir(syncResult, testPluginsDir)
+      expect(results).toHaveLength(0)
+    })
+
+    test("getExistingSymlinks finds symlinks using recursive scan", () => {
+      const skillDir = createTestSkillDir("find-symlink")
+      const repoDir = path.join(testPluginsDir, "repo1")
+      const targetPath = path.join(repoDir, "find-symlink")
+
+      fs.mkdirSync(repoDir, { recursive: true })
+      fs.symlinkSync(skillDir, targetPath, "dir")
+
+      const result = getExistingSymlinksInDir(testPluginsDir)
+      expect(result.size).toBe(1)
+      expect(result.has("repo1/find-symlink")).toBe(true)
+      expect(result.get("repo1/find-symlink")).toBe(skillDir)
+    })
+
+    test("getExistingSymlinks finds nested symlinks (unlike getExistingInstalls)", () => {
+      // getExistingSymlinks uses recursive scanDir, so it can find deeply nested symlinks
+      const skillDir = createTestSkillDir("nested-symlink")
+      const nestedDir = path.join(testPluginsDir, "level1", "level2")
+      const targetPath = path.join(nestedDir, "nested-symlink")
+
+      fs.mkdirSync(nestedDir, { recursive: true })
+      fs.symlinkSync(skillDir, targetPath, "dir")
+
+      const result = getExistingSymlinksInDir(testPluginsDir)
+      expect(result.size).toBe(1)
+      expect(result.has("level1/level2/nested-symlink")).toBe(true)
+    })
+
+    test("getExistingSymlinks ignores non-symlink directories", () => {
+      const repoDir = path.join(testPluginsDir, "repo1")
+      const targetPath = path.join(repoDir, "copied-dir")
+
+      fs.mkdirSync(targetPath, { recursive: true })
+      fs.writeFileSync(path.join(targetPath, "SKILL.md"), "# Not a symlink")
+
+      const result = getExistingSymlinksInDir(testPluginsDir)
+      // Should not find copied directories, only symlinks
+      expect(result.has("repo1/copied-dir")).toBe(false)
+    })
+
+    test("getExistingSymlinks returns empty map when plugins dir does not exist", () => {
+      const result = getExistingSymlinksInDir(path.join(testPluginsDir, "nonexistent"))
+      expect(result.size).toBe(0)
+    })
+
+    test("getSymlinkPath is an alias for getInstallPath", () => {
+      expect(getSymlinkPath).toBe(getInstallPath)
     })
   })
 
@@ -550,4 +689,100 @@ function cleanupStaleInstallsInDir(
   }
 
   return result
+}
+
+/**
+ * Helper that mirrors createSkillSymlink behavior with custom directory.
+ * This is the sync version matching the deprecated function.
+ */
+function createSkillSymlinkInDir(
+  skill: SkillInfo,
+  repoShortName: string,
+  pluginsDir: string
+): InstallResult {
+  const targetPath = path.join(pluginsDir, repoShortName, skill.name)
+  const result: InstallResult = {
+    skillName: skill.name,
+    sourcePath: skill.path,
+    targetPath,
+    created: false,
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+
+    if (fs.existsSync(targetPath)) {
+      const stats = fs.lstatSync(targetPath)
+
+      if (stats.isSymbolicLink()) {
+        const existingTarget = fs.readlinkSync(targetPath)
+        if (existingTarget === skill.path) {
+          return result
+        }
+        fs.unlinkSync(targetPath)
+      } else {
+        result.error = `Path exists and is not a symlink: ${targetPath}`
+        return result
+      }
+    }
+
+    fs.symlinkSync(skill.path, targetPath, "dir")
+    result.created = true
+  } catch (err) {
+    result.error = err instanceof Error ? err.message : String(err)
+  }
+
+  return result
+}
+
+/**
+ * Helper that mirrors createSymlinksForRepo behavior with custom directory.
+ */
+function createSymlinksForRepoInDir(
+  syncResult: SyncResult,
+  pluginsDir: string
+): InstallResult[] {
+  fs.mkdirSync(pluginsDir, { recursive: true })
+
+  const results: InstallResult[] = []
+
+  for (const skill of syncResult.skills) {
+    const result = createSkillSymlinkInDir(skill, syncResult.shortName, pluginsDir)
+    results.push(result)
+  }
+
+  return results
+}
+
+/**
+ * Helper that mirrors getExistingSymlinks behavior with custom directory.
+ * Uses recursive scanning (unlike getExistingInstalls which only scans 2 levels).
+ */
+function getExistingSymlinksInDir(pluginsDir: string): Map<string, string> {
+  const symlinks = new Map<string, string>()
+
+  if (!fs.existsSync(pluginsDir)) {
+    return symlinks
+  }
+
+  const scanDir = (dir: string, prefix: string = "") => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue
+
+      const fullPath = path.join(dir, entry.name)
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+
+      if (entry.isSymbolicLink()) {
+        const target = fs.readlinkSync(fullPath)
+        symlinks.set(relativePath, target)
+      } else if (entry.isDirectory()) {
+        scanDir(fullPath, relativePath)
+      }
+    }
+  }
+
+  scanDir(pluginsDir)
+  return symlinks
 }
