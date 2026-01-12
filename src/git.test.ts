@@ -37,7 +37,7 @@ describe("git", () => {
   describe("getRepoPath", () => {
     test("generates path in cache directory", () => {
       const repoPath = getRepoPath("git@github.com:org/repo.git")
-      expect(repoPath).toContain(".cache/opencode/remote-skills/repos/")
+      expect(repoPath).toContain(".cache/opencode/remote-config/repos/")
       expect(repoPath).toContain("github.com-org-repo")
     })
 

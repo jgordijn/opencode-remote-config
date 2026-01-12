@@ -12,7 +12,7 @@ const CACHE_BASE = path.join(
   process.env.HOME || "~",
   ".cache",
   "opencode",
-  "remote-skills",
+  "remote-config",
   "repos"
 )
 
@@ -89,7 +89,10 @@ async function cloneRepo(url: string, repoPath: string): Promise<void> {
   
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim()
-    throw new Error(`git clone failed: ${stderr || `exit code ${result.exitCode}`}`)
+    const stdout = result.stdout.toString().trim()
+    // Git sometimes writes to stdout, sometimes to stderr - capture both
+    const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${result.exitCode}`
+    throw new Error(`git clone failed: ${output}`)
   }
 }
 
@@ -105,7 +108,9 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
   const fetchResult = await $`git -C ${repoPath} fetch --all --prune`.quiet()
   if (fetchResult.exitCode !== 0) {
     const stderr = fetchResult.stderr.toString().trim()
-    throw new Error(`git fetch failed: ${stderr || `exit code ${fetchResult.exitCode}`}`)
+    const stdout = fetchResult.stdout.toString().trim()
+    const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${fetchResult.exitCode}`
+    throw new Error(`git fetch failed: ${output}`)
   }
   
   if (ref) {
@@ -114,7 +119,9 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
     
     if (checkoutResult.exitCode !== 0) {
       const stderr = checkoutResult.stderr.toString().trim()
-      throw new Error(`git checkout ${ref} failed: ${stderr || `exit code ${checkoutResult.exitCode}`}`)
+      const stdout = checkoutResult.stdout.toString().trim()
+      const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${checkoutResult.exitCode}`
+      throw new Error(`git checkout ${ref} failed: ${output}`)
     }
     
     // If it's a branch, pull latest
@@ -123,7 +130,9 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
       const pullResult = await $`git -C ${repoPath} pull --ff-only`.quiet()
       if (pullResult.exitCode !== 0) {
         const stderr = pullResult.stderr.toString().trim()
-        throw new Error(`git pull failed: ${stderr || `exit code ${pullResult.exitCode}`}`)
+        const stdout = pullResult.stdout.toString().trim()
+        const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${pullResult.exitCode}`
+        throw new Error(`git pull failed: ${output}`)
       }
     }
   } else {
@@ -262,7 +271,7 @@ export async function discoverAgents(repoPath: string): Promise<AgentInfo[]> {
     // Check depth limit
     if (depth > DISCOVERY_LIMITS.maxDepth) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
+        console.warn(`[remote-config] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
         limitsWarned = true
       }
       return
@@ -271,7 +280,7 @@ export async function discoverAgents(repoPath: string): Promise<AgentInfo[]> {
     // Check file count limit
     if (filesProcessed >= DISCOVERY_LIMITS.maxFiles) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
+        console.warn(`[remote-config] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
         limitsWarned = true
       }
       return
@@ -292,7 +301,7 @@ export async function discoverAgents(repoPath: string): Promise<AgentInfo[]> {
         try {
           const stats = fs.statSync(fullPath)
           if (stats.size > DISCOVERY_LIMITS.maxFileSize) {
-            console.warn(`[remote-skills] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
+            console.warn(`[remote-config] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
             continue
           }
           
@@ -303,7 +312,7 @@ export async function discoverAgents(repoPath: string): Promise<AgentInfo[]> {
             agents.push(parsed)
           }
         } catch (err) {
-          console.error(`[remote-skills] Failed to parse agent ${fullPath}:`, err)
+          console.error(`[remote-config] Failed to parse agent ${fullPath}:`, err)
         }
       }
     }
@@ -345,7 +354,7 @@ function parseAgentMarkdown(
   } catch (err) {
     // Log with repo-relative path to avoid exposing absolute paths
     const relativeToRepo = path.relative(path.dirname(agentDir), filePath)
-    console.error(`[remote-skills] Failed to parse frontmatter in ${relativeToRepo}:`, err)
+    console.error(`[remote-config] Failed to parse frontmatter in ${relativeToRepo}:`, err)
     return null
   }
   
@@ -364,7 +373,7 @@ function parseAgentMarkdown(
   // Allow: alphanumeric, hyphens, underscores, and forward slashes (for nesting)
   if (!/^[a-zA-Z0-9_/-]+$/.test(agentName)) {
     const relativeToRepo = path.relative(path.dirname(agentDir), filePath)
-    console.warn(`[remote-skills] Skipping agent with invalid name characters: ${relativeToRepo}`)
+    console.warn(`[remote-config] Skipping agent with invalid name characters: ${relativeToRepo}`)
     return null
   }
   
@@ -377,7 +386,7 @@ function parseAgentMarkdown(
   // Validate against schema
   const result = AgentConfigSchema.safeParse(rawConfig)
   if (!result.success) {
-    console.error(`[remote-skills] Invalid agent config in ${filePath}:`, 
+    console.error(`[remote-config] Invalid agent config in ${filePath}:`, 
       result.error.format())
     return null
   }
@@ -421,7 +430,7 @@ export async function discoverCommands(repoPath: string): Promise<CommandInfo[]>
     // Check depth limit
     if (depth > DISCOVERY_LIMITS.maxDepth) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
+        console.warn(`[remote-config] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
         limitsWarned = true
       }
       return
@@ -430,7 +439,7 @@ export async function discoverCommands(repoPath: string): Promise<CommandInfo[]>
     // Check file count limit
     if (filesProcessed >= DISCOVERY_LIMITS.maxFiles) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
+        console.warn(`[remote-config] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
         limitsWarned = true
       }
       return
@@ -451,7 +460,7 @@ export async function discoverCommands(repoPath: string): Promise<CommandInfo[]>
         try {
           const stats = fs.statSync(fullPath)
           if (stats.size > DISCOVERY_LIMITS.maxFileSize) {
-            console.warn(`[remote-skills] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
+            console.warn(`[remote-config] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
             continue
           }
           
@@ -462,7 +471,7 @@ export async function discoverCommands(repoPath: string): Promise<CommandInfo[]>
             commands.push(parsed)
           }
         } catch (err) {
-          console.error(`[remote-skills] Failed to parse command ${fullPath}:`, err)
+          console.error(`[remote-config] Failed to parse command ${fullPath}:`, err)
         }
       }
     }
@@ -504,7 +513,7 @@ function parseCommandMarkdown(
   } catch (err) {
     // Log with repo-relative path to avoid exposing absolute paths
     const relativeToRepo = path.relative(path.dirname(commandDir), filePath)
-    console.error(`[remote-skills] Failed to parse frontmatter in ${relativeToRepo}:`, err)
+    console.error(`[remote-config] Failed to parse frontmatter in ${relativeToRepo}:`, err)
     return null
   }
   
@@ -521,7 +530,7 @@ function parseCommandMarkdown(
   // Allow: alphanumeric, hyphens, underscores, and forward slashes (for nesting)
   if (!/^[a-zA-Z0-9_/-]+$/.test(commandName)) {
     const relativeToRepo = path.relative(path.dirname(commandDir), filePath)
-    console.warn(`[remote-skills] Skipping command with invalid name characters: ${relativeToRepo}`)
+    console.warn(`[remote-config] Skipping command with invalid name characters: ${relativeToRepo}`)
     return null
   }
   
@@ -535,7 +544,7 @@ function parseCommandMarkdown(
   // Validate against schema
   const result = CommandConfigSchema.safeParse(rawConfig)
   if (!result.success) {
-    console.error(`[remote-skills] Invalid command config in ${filePath}:`, 
+    console.error(`[remote-config] Invalid command config in ${filePath}:`, 
       result.error.format())
     return null
   }
@@ -580,7 +589,7 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
     // Check depth limit
     if (depth > DISCOVERY_LIMITS.maxDepth) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
+        console.warn(`[remote-config] Skipping deep directories (max depth: ${DISCOVERY_LIMITS.maxDepth})`)
         limitsWarned = true
       }
       return
@@ -589,7 +598,7 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
     // Check file count limit
     if (filesProcessed >= DISCOVERY_LIMITS.maxFiles) {
       if (!limitsWarned) {
-        console.warn(`[remote-skills] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
+        console.warn(`[remote-config] Stopping discovery (max files: ${DISCOVERY_LIMITS.maxFiles})`)
         limitsWarned = true
       }
       return
@@ -610,7 +619,7 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
         try {
           const stats = fs.statSync(fullPath)
           if (stats.size > DISCOVERY_LIMITS.maxFileSize) {
-            console.warn(`[remote-skills] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
+            console.warn(`[remote-config] Skipping large file (${Math.round(stats.size / 1024)}KB): ${entry.name}`)
             continue
           }
           
@@ -628,7 +637,7 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
           // Allow: alphanumeric, hyphens, underscores
           if (!/^[a-zA-Z0-9_-]+$/.test(pluginName)) {
             const relativeToRepo = path.relative(path.dirname(pluginDir), fullPath)
-            console.warn(`[remote-skills] Skipping plugin with invalid name characters: ${relativeToRepo}`)
+            console.warn(`[remote-config] Skipping plugin with invalid name characters: ${relativeToRepo}`)
             continue
           }
           
@@ -639,7 +648,7 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
             extension: ext,
           })
         } catch (err) {
-          console.error(`[remote-skills] Failed to process plugin ${fullPath}:`, err)
+          console.error(`[remote-config] Failed to process plugin ${fullPath}:`, err)
         }
       }
     }

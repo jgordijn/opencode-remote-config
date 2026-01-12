@@ -103,7 +103,7 @@ export function shouldImport(name: string, config: ImportConfig | undefined): bo
 export type RepositoryConfig = z.infer<typeof RepositoryConfigSchema>
 
 /**
- * Schema for the remote-skills plugin configuration.
+ * Schema for the remote-config plugin configuration.
  * Uses strict mode to reject unrecognized keys.
  */
 export const RemoteSkillsConfigSchema = z.object({
@@ -179,7 +179,7 @@ export function loadConfigWithLocation(): ConfigLoadResult {
         const result = RemoteSkillsConfigSchema.safeParse(parsed)
         
         if (!result.success) {
-          console.error(`[remote-skills] Invalid configuration in ${configPath}:`, result.error.format())
+          console.error(`[remote-config] Invalid configuration in ${configPath}:`, result.error.format())
           continue
         }
         
@@ -188,7 +188,7 @@ export function loadConfigWithLocation(): ConfigLoadResult {
         
         return { config: result.data, configDir }
       } catch (error) {
-        console.error(`[remote-skills] Error reading ${configPath}:`, error)
+        console.error(`[remote-config] Error reading ${configPath}:`, error)
         continue
       }
     }
@@ -212,7 +212,7 @@ export function parseConfig(config: unknown): RemoteSkillsConfig {
   const result = RemoteSkillsConfigSchema.safeParse(config)
   
   if (!result.success) {
-    console.error("[remote-skills] Invalid configuration:", result.error.format())
+    console.error("[remote-config] Invalid configuration:", result.error.format())
     return DEFAULT_CONFIG
   }
   

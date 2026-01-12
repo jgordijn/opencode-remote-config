@@ -129,7 +129,7 @@ For development or local skill repositories, use `file://` URLs:
 Skills are cloned to a cache directory and symlinked into the OpenCode skill directory:
 
 ```
-~/.cache/opencode/remote-skills/repos/
+~/.cache/opencode/remote-config/repos/
 └── github.com-company-shared-skills/
     └── <full git clone>
 
@@ -200,20 +200,20 @@ Nested paths are converted to dashes: `plugin/foo/bar/baz.ts` becomes `foo-bar-b
 
 **Plugin changes require restart:** Unlike skills, plugins are loaded at OpenCode startup. When plugin changes are detected, you'll see:
 ```
-[remote-skills] Plugin changes detected. Restart OpenCode to apply.
+[remote-config] Plugin changes detected. Restart OpenCode to apply.
 ```
 
 ### Example Output
 
 ```
-[remote-skills] Syncing 2 repositories...
-[remote-skills] ✓ company/shared-skills (main) - 5 skills
-[remote-skills] ✓ team/team-skills (v1.2.0) - 3 skills
-[remote-skills] ⚠ Conflict: 'git-commit' exists locally, skipping
-[remote-skills] Discovered 4 remote agents
-[remote-skills] Discovered 2 remote plugins
-[remote-skills] 7 skills, 2 plugins available
-[remote-skills] Injected 4 remote agents into config
+[remote-config] Syncing 2 repositories...
+[remote-config] ✓ company/shared-skills (main) - 5 skills
+[remote-config] ✓ team/team-skills (v1.2.0) - 3 skills
+[remote-config] ⚠ Conflict: 'git-commit' exists locally, skipping
+[remote-config] Discovered 4 remote agents
+[remote-config] Discovered 2 remote plugins
+[remote-config] 7 skills, 2 plugins available
+[remote-config] Injected 4 remote agents into config
 ```
 
 ### Authentication
@@ -305,7 +305,7 @@ This section contains instructions for LLM agents helping users set up the openc
 **Problem: Updates not reflected**
 - In background mode, restart OpenCode to apply updates
 - Check that the `ref` (branch/tag) is correct
-- Try removing the cached repo: `rm -rf ~/.cache/opencode/remote-skills/repos/<repo-id>`
+- Try removing the cached repo: `rm -rf ~/.cache/opencode/remote-config/repos/<repo-id>`
 
 ### Repository Structure Requirements
 

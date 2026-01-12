@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/sst/opencode/plugins/remote-skills/config.json",
-  "title": "OpenCode Remote Skills Configuration",
-  "description": "Configuration for the remote-skills plugin that syncs skills, agents, and commands from Git repositories",
+  "$id": "https://github.com/sst/opencode/plugins/remote-config/config.json",
+  "title": "OpenCode Remote Config Configuration",
+  "description": "Configuration for the remote-config plugin that syncs skills, agents, and commands from Git repositories",
   "type": "object",
   "additionalProperties": false,
   "properties": {

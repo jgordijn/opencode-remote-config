@@ -22,10 +22,10 @@ import { join } from "path"
 import { homedir } from "os"
 
 /** Prefix for all log messages */
-const LOG_PREFIX = "[remote-skills]"
+const LOG_PREFIX = "[remote-config]"
 
 /** Log file path */
-const LOG_DIR = join(homedir(), ".cache", "opencode", "remote-skills")
+const LOG_DIR = join(homedir(), ".cache", "opencode", "remote-config")
 const LOG_FILE = join(LOG_DIR, "plugin.log")
 
 /** Guard to prevent duplicate initialization within the same process */
@@ -295,7 +295,7 @@ export const RemoteSkillsPlugin: Plugin = async (ctx) => {
   
   let message: string
   if (parts.length === 0) {
-    message = "No remote skills or plugins found"
+    message = "No remote config found"
   } else {
     message = `${parts.join(", ")} available`
     if (skippedCount > 0) {

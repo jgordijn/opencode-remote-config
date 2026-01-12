@@ -103,7 +103,7 @@ export function loadManifest(repoPath: string): Manifest | null {
 
     if (!result.success) {
       console.warn(
-        `[remote-skills] Invalid manifest.json in ${repoPath}:`,
+        `[remote-config] Invalid manifest.json in ${repoPath}:`,
         result.error.format()
       )
       return null
@@ -111,7 +111,7 @@ export function loadManifest(repoPath: string): Manifest | null {
 
     return result.data
   } catch (error) {
-    console.warn(`[remote-skills] Error reading manifest.json in ${repoPath}:`, error)
+    console.warn(`[remote-config] Error reading manifest.json in ${repoPath}:`, error)
     return null
   }
 }
