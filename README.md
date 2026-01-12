@@ -1,6 +1,6 @@
 # opencode-remote-config
 
-An OpenCode plugin that syncs skills and agents from Git repositories, making them available to OpenCode without polluting your local configuration.
+An OpenCode plugin that syncs skills, agents, commands, and instructions from Git repositories, making them available to OpenCode without polluting your local configuration.
 
 ## Features
 
@@ -8,8 +8,10 @@ An OpenCode plugin that syncs skills and agents from Git repositories, making th
 - **Local directories**: Use `file://` URLs for local directories (great for development)
 - **Skills import**: Import skill definitions from `skill/` directory
 - **Agents import**: Import agent definitions from `agent/` directory
+- **Commands import**: Import slash commands from `command/` directory
 - **Plugins import**: Import OpenCode hook plugins from `plugin/` directory
-- **Selective import**: Import all or specify which skills/agents/plugins to include
+- **Instructions import**: Import AGENTS.md instructions via manifest.json
+- **Selective import**: Use `include` or `exclude` filters for fine-grained control
 - **Ref pinning**: Pin to branch, tag, or commit SHA
 - **Priority handling**: User config > first repository > subsequent repositories
 - **Conflict handling**: Local definitions take precedence, warns on conflicts
@@ -71,9 +73,9 @@ bun install && bun run build
        {
          "url": "git@github.com:company/shared-skills.git",
          "ref": "main",
-         "skills": ["code-review", "kotlin-pro"],
-         "agents": ["code-reviewer", "specialized/db-expert"],
-         "plugins": ["notify", "utils-logger"]
+         "skills": { "include": ["code-review", "kotlin-pro"] },
+         "agents": { "include": ["code-reviewer", "specialized/db-expert"] },
+         "plugins": { "include": ["notify", "utils-logger"] }
        },
        {
          "url": "git@github.com:team/team-skills.git",
@@ -83,7 +85,7 @@ bun install && bun run build
    }
    ```
 
-3. **Restart OpenCode** to load the plugin.
+**Restart OpenCode** to load the plugin.
 
 ### Configuration
 
@@ -101,9 +103,11 @@ The plugin reads its configuration from a separate JSON file (not `opencode.json
 | `repositories` | Array | `[]` | List of repositories to sync |
 | `repositories[].url` | String | Required | Git URL, HTTPS URL, or `file://` path |
 | `repositories[].ref` | String | Default branch | Branch, tag, or commit SHA (git only) |
-| `repositories[].skills` | Array or `"*"` | All skills | Specific skills to import |
-| `repositories[].agents` | Array or `"*"` | All agents | Specific agents to import |
-| `repositories[].plugins` | Array or `"*"` | All plugins | Specific plugins to import |
+| `repositories[].skills` | `"*"` or `{ include: [...] }` or `{ exclude: [...] }` | All skills | Skills to import |
+| `repositories[].agents` | `"*"` or `{ include: [...] }` or `{ exclude: [...] }` | All agents | Agents to import |
+| `repositories[].commands` | `"*"` or `{ include: [...] }` or `{ exclude: [...] }` | All commands | Slash commands to import |
+| `repositories[].plugins` | `"*"` or `{ include: [...] }` or `{ exclude: [...] }` | All plugins | Plugins to import |
+| `repositories[].instructions` | `"*"` or `{ include: [...] }` or `{ exclude: [...] }` | All instructions | Instructions from manifest to import |
 
 ### Local Directories
 
@@ -412,8 +416,8 @@ import * as fs from "fs"
     {
       "url": "git@github.com:company/shared-skills.git",
       "ref": "main",
-      "skills": ["code-review", "testing"],
-      "agents": ["code-reviewer"]
+      "skills": { "include": ["code-review", "testing"] },
+      "agents": { "include": ["code-reviewer"] }
     },
     {
       "url": "git@github.com:team/team-skills.git",
@@ -424,13 +428,27 @@ import * as fs from "fs"
 }
 ```
 
-**Skills only (no agents):**
+**Skills only (exclude all agents):**
 ```jsonc
 {
   "repositories": [
     {
       "url": "git@github.com:company/skills.git",
-      "agents": []  // Empty array imports no agents
+      "agents": { "include": ["__none__"] }  // Include a non-existent name to import no agents
+    }
+  ]
+}
+```
+
+Note: To effectively import nothing, include a name that doesn't exist in the repository. The include/exclude arrays require at least one item.
+
+**Exclude specific items:**
+```jsonc
+{
+  "repositories": [
+    {
+      "url": "git@github.com:company/skills.git",
+      "skills": { "exclude": ["deprecated-skill", "experimental"] }
     }
   ]
 }
@@ -443,8 +461,8 @@ import * as fs from "fs"
     {
       "url": "git@github.com:company/shared-skills.git",
       "skills": "*",
-      "agents": ["code-reviewer"],
-      "plugins": ["notify", "analytics"]
+      "agents": { "include": ["code-reviewer"] },
+      "plugins": { "include": ["notify", "analytics"] }
     }
   ]
 }
