@@ -1,6 +1,6 @@
 {
   "name": "@jgordijn/opencode-remote-config",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "OpenCode plugin to sync skills, agents and commands from Git repositories",
   "repository": {
     "type": "git",
