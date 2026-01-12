@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test"
-import { getRepoPath, isCloned, discoverSkills, discoverAgents, discoverCommands, discoverPlugins, isFileUrl, fileUrlToPath } from "./git"
+import { describe, test, expect, beforeEach, afterEach } from "bun:test"
+import { getRepoPath, isCloned, discoverSkills, discoverAgents, discoverCommands, discoverPlugins, isFileUrl, fileUrlToPath, syncRepository } from "./git"
 import * as path from "path"
 import * as fs from "fs"
 import * as os from "os"
@@ -1383,6 +1383,136 @@ template: Mixed
       } finally {
         fs.rmSync(tmpDir, { recursive: true })
       }
+    })
+  })
+
+  describe("syncRepository (local directory)", () => {
+    let tmpDir: string
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-sync-"))
+    })
+
+    afterEach(() => {
+      if (fs.existsSync(tmpDir)) {
+        fs.rmSync(tmpDir, { recursive: true })
+      }
+    })
+
+    test("includes instructions field in result", async () => {
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toBeDefined()
+      expect(Array.isArray(result.instructions)).toBe(true)
+    })
+
+    test("discovers instructions from manifest.json", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "CONTRIBUTING.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+      fs.writeFileSync(path.join(tmpDir, "CONTRIBUTING.md"), "# Contributing")
+
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toHaveLength(2)
+      expect(result.instructions.map(i => i.name).sort()).toEqual(["CONTRIBUTING.md", "README.md"])
+    })
+
+    test("returns empty instructions when no manifest exists", async () => {
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toEqual([])
+    })
+
+    test("filters instructions with include config", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "CONTRIBUTING.md", "SETUP.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+      fs.writeFileSync(path.join(tmpDir, "CONTRIBUTING.md"), "# Contributing")
+      fs.writeFileSync(path.join(tmpDir, "SETUP.md"), "# Setup")
+
+      const result = await syncRepository({
+        url: `file://${tmpDir}`,
+        instructions: { include: ["README.md", "SETUP.md"] }
+      })
+      expect(result.instructions).toHaveLength(2)
+      expect(result.instructions.map(i => i.name).sort()).toEqual(["README.md", "SETUP.md"])
+    })
+
+    test("filters instructions with exclude config", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "CONTRIBUTING.md", "SETUP.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+      fs.writeFileSync(path.join(tmpDir, "CONTRIBUTING.md"), "# Contributing")
+      fs.writeFileSync(path.join(tmpDir, "SETUP.md"), "# Setup")
+
+      const result = await syncRepository({
+        url: `file://${tmpDir}`,
+        instructions: { exclude: ["CONTRIBUTING.md"] }
+      })
+      expect(result.instructions).toHaveLength(2)
+      expect(result.instructions.map(i => i.name).sort()).toEqual(["README.md", "SETUP.md"])
+    })
+
+    test("includes all instructions with '*' config", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "CONTRIBUTING.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+      fs.writeFileSync(path.join(tmpDir, "CONTRIBUTING.md"), "# Contributing")
+
+      const result = await syncRepository({
+        url: `file://${tmpDir}`,
+        instructions: "*"
+      })
+      expect(result.instructions).toHaveLength(2)
+    })
+
+    test("includes all instructions when config is undefined", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "CONTRIBUTING.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+      fs.writeFileSync(path.join(tmpDir, "CONTRIBUTING.md"), "# Contributing")
+
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toHaveLength(2)
+    })
+
+    test("handles nested instruction paths", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["docs/guide.md"] })
+      )
+      fs.mkdirSync(path.join(tmpDir, "docs"))
+      fs.writeFileSync(path.join(tmpDir, "docs/guide.md"), "# Guide")
+
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toHaveLength(1)
+      expect(result.instructions[0].name).toBe("docs/guide.md")
+    })
+
+    test("skips missing instruction files", async () => {
+      fs.writeFileSync(
+        path.join(tmpDir, "manifest.json"),
+        JSON.stringify({ instructions: ["README.md", "missing.md"] })
+      )
+      fs.writeFileSync(path.join(tmpDir, "README.md"), "# README")
+
+      const result = await syncRepository({ url: `file://${tmpDir}` })
+      expect(result.instructions).toHaveLength(1)
+      expect(result.instructions[0].name).toBe("README.md")
+    })
+
+    test("returns empty instructions for non-existent directory", async () => {
+      const result = await syncRepository({ url: "file:///non/existent/path" })
+      expect(result.instructions).toEqual([])
+      expect(result.error).toBeDefined()
     })
   })
 })

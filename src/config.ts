@@ -71,6 +71,13 @@ export const RepositoryConfigSchema = z.object({
    * Plugins must be self-contained (no local imports).
    */
   plugins: ImportConfigSchema.optional(),
+  
+  /** 
+   * Instructions to import.
+   * Use "*" for all, { include: [...] } for specific instructions, or { exclude: [...] } to import all except listed.
+   * If omitted, imports all instructions from the repository's manifest.
+   */
+  instructions: ImportConfigSchema.optional(),
 }).strict()
 
 /**

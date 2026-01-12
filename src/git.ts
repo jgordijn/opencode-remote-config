@@ -2,10 +2,11 @@ import { $ } from "bun"
 import * as path from "path"
 import * as fs from "fs"
 import matter from "gray-matter"
-import { getRepoId, type RepositoryConfig } from "./config"
+import { getRepoId, shouldImport, type RepositoryConfig } from "./config"
 import { AgentConfigSchema, type AgentInfo } from "./agent"
 import { CommandConfigSchema, type CommandInfo } from "./command"
 import type { PluginInfo } from "./plugin-info"
+import { discoverInstructions, type InstructionInfo } from "./instruction"
 
 /** Base directory for cloned repositories */
 const CACHE_BASE = path.join(
@@ -54,6 +55,7 @@ export interface SyncResult {
   agents: AgentInfo[]
   commands: CommandInfo[]
   plugins: PluginInfo[]
+  instructions: InstructionInfo[]
   updated: boolean
   error?: string
 }
@@ -62,6 +64,7 @@ export interface SyncResult {
 export type { AgentInfo } from "./agent"
 export type { CommandInfo } from "./command"
 export type { PluginInfo } from "./plugin-info"
+export type { InstructionInfo } from "./instruction"
 
 /**
  * Get the local path where a repository should be cloned
@@ -688,6 +691,7 @@ async function syncLocalDirectory(config: RepositoryConfig): Promise<SyncResult>
   let agents: AgentInfo[] = []
   let commands: CommandInfo[] = []
   let plugins: PluginInfo[] = []
+  let instructions: InstructionInfo[] = []
   
   // Check if the directory exists
   if (!fs.existsSync(localPath)) {
@@ -698,38 +702,32 @@ async function syncLocalDirectory(config: RepositoryConfig): Promise<SyncResult>
     // Discover skills directly from the local directory
     skills = await discoverSkills(localPath)
     
-    // Filter skills if specific ones are requested
-    if (config.skills && config.skills !== "*" && Array.isArray(config.skills)) {
-      const requestedSkills = new Set(config.skills)
-      skills = skills.filter(s => requestedSkills.has(s.name))
-    }
+    // Filter skills based on config
+    skills = skills.filter(s => shouldImport(s.name, config.skills))
     
     // Discover agents directly from the local directory
     agents = await discoverAgents(localPath)
     
-    // Filter agents if specific ones are requested
-    if (config.agents && config.agents !== "*" && Array.isArray(config.agents)) {
-      const requestedAgents = new Set(config.agents)
-      agents = agents.filter(a => requestedAgents.has(a.name))
-    }
+    // Filter agents based on config
+    agents = agents.filter(a => shouldImport(a.name, config.agents))
     
     // Discover commands directly from the local directory
     commands = await discoverCommands(localPath)
     
-    // Filter commands if specific ones are requested
-    if (config.commands && config.commands !== "*" && Array.isArray(config.commands)) {
-      const requestedCommands = new Set(config.commands)
-      commands = commands.filter(c => requestedCommands.has(c.name))
-    }
+    // Filter commands based on config
+    commands = commands.filter(c => shouldImport(c.name, config.commands))
     
     // Discover plugins directly from the local directory
     plugins = await discoverPlugins(localPath, shortName)
     
-    // Filter plugins if specific ones are requested
-    if (config.plugins && config.plugins !== "*" && Array.isArray(config.plugins)) {
-      const requestedPlugins = new Set(config.plugins)
-      plugins = plugins.filter(p => requestedPlugins.has(p.name))
-    }
+    // Filter plugins based on config
+    plugins = plugins.filter(p => shouldImport(p.name, config.plugins))
+    
+    // Discover instructions from the local directory
+    instructions = discoverInstructions(localPath)
+    
+    // Filter instructions based on config
+    instructions = instructions.filter(i => shouldImport(i.name, config.instructions))
   }
   
   return {
@@ -741,6 +739,7 @@ async function syncLocalDirectory(config: RepositoryConfig): Promise<SyncResult>
     agents,
     commands,
     plugins,
+    instructions,
     updated: false, // Local directories don't have an "updated" concept
     error,
   }
@@ -775,49 +774,44 @@ async function syncGitRepository(config: RepositoryConfig): Promise<SyncResult> 
     error = err instanceof Error ? err.message : String(err)
   }
   
-  // Discover skills, agents, commands, and plugins even if there was an update error
+  // Discover skills, agents, commands, plugins, and instructions even if there was an update error
   let skills: SkillInfo[] = []
   let agents: AgentInfo[] = []
   let commands: CommandInfo[] = []
   let plugins: PluginInfo[] = []
+  let instructions: InstructionInfo[] = []
   let currentRef = config.ref || "default"
   
   if (isCloned(repoPath)) {
     skills = await discoverSkills(repoPath)
     currentRef = await getCurrentRef(repoPath)
     
-    // Filter skills if specific ones are requested
-    if (config.skills && config.skills !== "*" && Array.isArray(config.skills)) {
-      const requestedSkills = new Set(config.skills)
-      skills = skills.filter(s => requestedSkills.has(s.name))
-    }
+    // Filter skills based on config
+    skills = skills.filter(s => shouldImport(s.name, config.skills))
     
     // Discover agents
     agents = await discoverAgents(repoPath)
     
-    // Filter agents if specific ones are requested
-    if (config.agents && config.agents !== "*" && Array.isArray(config.agents)) {
-      const requestedAgents = new Set(config.agents)
-      agents = agents.filter(a => requestedAgents.has(a.name))
-    }
+    // Filter agents based on config
+    agents = agents.filter(a => shouldImport(a.name, config.agents))
     
     // Discover commands
     commands = await discoverCommands(repoPath)
     
-    // Filter commands if specific ones are requested
-    if (config.commands && config.commands !== "*" && Array.isArray(config.commands)) {
-      const requestedCommands = new Set(config.commands)
-      commands = commands.filter(c => requestedCommands.has(c.name))
-    }
+    // Filter commands based on config
+    commands = commands.filter(c => shouldImport(c.name, config.commands))
     
     // Discover plugins
     plugins = await discoverPlugins(repoPath, shortName)
     
-    // Filter plugins if specific ones are requested
-    if (config.plugins && config.plugins !== "*" && Array.isArray(config.plugins)) {
-      const requestedPlugins = new Set(config.plugins)
-      plugins = plugins.filter(p => requestedPlugins.has(p.name))
-    }
+    // Filter plugins based on config
+    plugins = plugins.filter(p => shouldImport(p.name, config.plugins))
+    
+    // Discover instructions
+    instructions = discoverInstructions(repoPath)
+    
+    // Filter instructions based on config
+    instructions = instructions.filter(i => shouldImport(i.name, config.instructions))
   }
   
   return {
@@ -829,6 +823,7 @@ async function syncGitRepository(config: RepositoryConfig): Promise<SyncResult> 
     agents,
     commands,
     plugins,
+    instructions,
     updated,
     error,
   }

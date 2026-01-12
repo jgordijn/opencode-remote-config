@@ -228,5 +228,56 @@ describe("instruction", () => {
         rmSync(outsideDir, { recursive: true, force: true })
       }
     })
+
+    test("DoS protection: limits number of instructions processed", () => {
+      // Create manifest with more than 100 instructions
+      const instructionNames = Array.from({ length: 150 }, (_, i) => `file${i}.md`)
+      const manifestPath = join(testDir, "manifest.json")
+      writeFileSync(manifestPath, JSON.stringify({ instructions: instructionNames }))
+
+      // Create only first 105 files (more than limit, to verify cutoff)
+      for (let i = 0; i < 105; i++) {
+        writeFileSync(join(testDir, `file${i}.md`), `# File ${i}`)
+      }
+
+      // Capture console.warn to verify warning is logged
+      const warnings: unknown[][] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => warnings.push(args)
+
+      try {
+        const result = discoverInstructions(testDir)
+        // Should be limited to 100
+        expect(result).toHaveLength(100)
+        // Should warn about the limit
+        expect(warnings.some(w => String(w[0]).includes("Limiting instructions to 100"))).toBe(true)
+      } finally {
+        console.warn = originalWarn
+      }
+    })
+
+    test("DoS protection: skips paths exceeding max length", () => {
+      // Create a path that exceeds 500 characters
+      const longPath = "a".repeat(501) + ".md"
+      const manifestPath = join(testDir, "manifest.json")
+      writeFileSync(manifestPath, JSON.stringify({ instructions: [longPath, "valid.md"] }))
+      writeFileSync(join(testDir, "valid.md"), "# Valid")
+
+      // Capture console.warn to verify warning is logged
+      const warnings: unknown[][] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => warnings.push(args)
+
+      try {
+        const result = discoverInstructions(testDir)
+        // Should only include valid.md
+        expect(result).toHaveLength(1)
+        expect(result[0].name).toBe("valid.md")
+        // Should warn about the long path
+        expect(warnings.some(w => String(w[0]).includes("path exceeding"))).toBe(true)
+      } finally {
+        console.warn = originalWarn
+      }
+    })
   })
 })

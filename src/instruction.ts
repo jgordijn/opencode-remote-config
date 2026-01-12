@@ -2,6 +2,14 @@ import { existsSync } from "fs"
 import { join, normalize, resolve, sep } from "path"
 import { loadManifest, containsPathTraversal } from "./manifest"
 
+/** Discovery limits to prevent DoS from malicious manifests */
+const INSTRUCTION_LIMITS = {
+  /** Maximum number of instruction entries to process */
+  maxInstructions: 100,
+  /** Maximum path length to prevent resource exhaustion */
+  maxPathLength: 500,
+}
+
 /**
  * Information about a discovered instruction file.
  */
@@ -39,7 +47,22 @@ export function discoverInstructions(repoPath: string): InstructionInfo[] {
   const manifest = result.manifest
   const instructions: InstructionInfo[] = []
 
-  for (const instructionName of manifest.instructions) {
+  // DoS protection: limit number of instructions to process
+  const instructionsToProcess = manifest.instructions.slice(0, INSTRUCTION_LIMITS.maxInstructions)
+  if (manifest.instructions.length > INSTRUCTION_LIMITS.maxInstructions) {
+    console.warn(
+      `[remote-config] Limiting instructions to ${INSTRUCTION_LIMITS.maxInstructions} (manifest has ${manifest.instructions.length})`
+    )
+  }
+
+  for (const instructionName of instructionsToProcess) {
+    // DoS protection: skip excessively long paths
+    if (instructionName.length > INSTRUCTION_LIMITS.maxPathLength) {
+      console.warn(
+        `[remote-config] Skipping instruction with path exceeding ${INSTRUCTION_LIMITS.maxPathLength} chars`
+      )
+      continue
+    }
     // Defense-in-depth: reject paths with traversal segments
     // (manifest validation should have caught this, but verify here too)
     if (containsPathTraversal(instructionName)) {

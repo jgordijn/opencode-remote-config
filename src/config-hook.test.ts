@@ -94,6 +94,7 @@ function mockSyncResult(
     agents,
     commands: [],
     plugins: [],
+    instructions: [],
     updated: false,
     error,
   }
