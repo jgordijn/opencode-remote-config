@@ -81,11 +81,15 @@ function createSymlinkSync(
         return { created: false }
       }
       
-      // Remove old symlink
+      // Remove old symlink pointing to different location
       fs.unlinkSync(targetPath)
     } else {
-      // Not a symlink, don't overwrite
-      return { created: false, error: `Path exists and is not a symlink: ${targetPath}` }
+      // Existing directory or file (from copy mode) - remove it to make way for symlink
+      if (stats.isFile()) {
+        fs.unlinkSync(targetPath)
+      } else if (stats.isDirectory()) {
+        fs.rmSync(targetPath, { recursive: true, force: true })
+      }
     }
   }
   
@@ -120,7 +124,18 @@ export async function createSkillInstall(
     fs.mkdirSync(path.dirname(targetPath), { recursive: true })
     
     if (installMethod === "copy") {
-      // Copy mode: use syncDirectory
+      // Copy mode: check if already correctly installed
+      if (fs.existsSync(targetPath)) {
+        const stats = fs.lstatSync(targetPath)
+        // If it's already a directory (not a symlink), it's already in copy mode - skip
+        if (stats.isDirectory() && !stats.isSymbolicLink()) {
+          result.created = false
+          return result
+        }
+        // Otherwise it's a symlink or file from previous install - syncDirectory will replace it
+      }
+      
+      // Copy the directory (will remove existing symlink/file first)
       await syncDirectory(skill.path, targetPath)
       result.created = true
     } else {

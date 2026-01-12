@@ -28,11 +28,24 @@ export async function detectRsync(): Promise<boolean> {
 /**
  * Copy a directory using rsync.
  * Uses rsync -a --delete to mirror source to target.
+ * Removes any existing symlinks or files at target before syncing.
  * 
  * @param source Source directory path
  * @param target Target directory path
  */
 async function copyWithRsync(source: string, target: string): Promise<void> {
+  // Remove target if it exists and is a symlink or file
+  // (rsync won't properly handle symlinks pointing to the source)
+  if (fs.existsSync(target)) {
+    const stat = fs.lstatSync(target)
+    if (stat.isSymbolicLink() || stat.isFile()) {
+      fs.unlinkSync(target)
+    } else if (stat.isDirectory()) {
+      // If it's a directory, let rsync handle the sync with --delete
+      // This preserves existing content and syncs incrementally
+    }
+  }
+
   // Ensure target parent exists
   fs.mkdirSync(path.dirname(target), { recursive: true })
 
