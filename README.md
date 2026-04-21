@@ -2,6 +2,18 @@
 
 An OpenCode plugin that syncs skills, agents, commands, and instructions from Git repositories, making them available to OpenCode without polluting your local configuration.
 
+## Security
+
+**Plugins from remote repositories are executed as code on your machine.**
+
+To allow remote plugins, you must explicitly set `trustPlugins: true` on
+each repository. Without it, skills, agents, commands, and instructions
+are imported (these are data, not code), but plugins are skipped with a
+warning.
+
+Only enable `trustPlugins` for repositories you fully control or audit.
+A compromised repository can run arbitrary code with your user privileges.
+
 ## Features
 
 - **Git-based sync**: Clone once, fetch updates on startup

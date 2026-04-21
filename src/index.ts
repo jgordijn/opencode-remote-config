@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfig, type RemoteSkillsConfig } from "./config"
+import { loadConfig, getRepoId, type RemoteSkillsConfig } from "./config"
 import { syncRepositories, type SyncResult } from "./git"
 import type { AgentConfig } from "./agent"
 import type { CommandConfig } from "./command"
@@ -171,10 +171,19 @@ async function performSync(
     log(`Discovered ${remoteInstructions.length} remote instructions`)
   }
 
-  // Collect all plugins from repositories
+  // Collect all plugins from repositories (trust gate: skip unless trustPlugins: true)
   const allPlugins: PluginInfo[] = []
   for (const result of results) {
     if (result.error) continue
+    const repoConfig = config.repositories.find(
+      (r) => getRepoId(r.url) === result.repoId,
+    )
+    if (repoConfig && !repoConfig.trustPlugins) {
+      if (result.plugins.length > 0) {
+        log(`⚠ Skipping ${result.plugins.length} plugin(s) from ${result.shortName}: set trustPlugins: true to enable remote code execution`)
+      }
+      continue
+    }
     allPlugins.push(...result.plugins)
   }
 
