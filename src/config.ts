@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { logError } from "./logging"
+import { validateGitUrl, validateGitRef } from "./url-validator"
 
 /** Configuration file name */
 const CONFIG_FILENAME = "remote-config.json"
@@ -39,10 +40,30 @@ export type ImportConfig = z.infer<typeof ImportConfigSchema>
  */
 export const RepositoryConfigSchema = z.object({
   /** Git URL (SSH or HTTPS) */
-  url: z.string().min(1, "Repository URL is required"),
+  url: z.string().min(1, "Repository URL is required").refine(
+    (url) => {
+      try {
+        validateGitUrl(url)
+        return true
+      } catch {
+        return false
+      }
+    },
+    { message: "Invalid repository URL — must use https, http, git@, ssh, or file scheme and must not start with '-'" },
+  ),
   
   /** Git ref to checkout (branch, tag, or commit SHA). Defaults to default branch. */
-  ref: z.string().optional(),
+  ref: z.string().refine(
+    (ref) => {
+      try {
+        validateGitRef(ref)
+        return true
+      } catch {
+        return false
+      }
+    },
+    { message: "Invalid git ref — must not start with '-' and must contain only safe characters" },
+  ).optional(),
   
   /** 
    * Skills to import.

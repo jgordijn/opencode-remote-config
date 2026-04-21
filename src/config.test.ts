@@ -149,6 +149,34 @@ describe("config", () => {
       })
       expect(result.success).toBe(false)
     })
+
+    describe("rejects dangerous URLs", () => {
+      test.each([
+        "--template=/tmp/evil",
+        "-c core.sshCommand=evil",
+        "ftp://example.com/repo",
+        "ssh://-oProxyCommand=evil",
+        "",
+      ])("rejects url=%s", (url) => {
+        const result = RepositoryConfigSchema.safeParse({ url })
+        expect(result.success).toBe(false)
+      })
+    })
+
+    describe("rejects dangerous refs", () => {
+      test.each([
+        "--force",
+        "-f",
+        "main; rm -rf /",
+        "main..feature",
+      ])("rejects ref=%s with valid URL", (ref) => {
+        const result = RepositoryConfigSchema.safeParse({
+          url: "https://github.com/org/repo.git",
+          ref,
+        })
+        expect(result.success).toBe(false)
+      })
+    })
   })
 
   describe("RemoteSkillsConfigSchema", () => {
