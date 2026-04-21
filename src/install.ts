@@ -1,6 +1,7 @@
 import * as path from "path"
 import * as fs from "fs"
 import { $ } from "bun"
+import { homedir } from "os"
 import type { SkillInfo, SyncResult } from "./git"
 import { syncDirectory } from "./copy"
 
@@ -9,7 +10,7 @@ export type InstallMethod = "link" | "copy"
 
 /** Base directory for OpenCode skills */
 const SKILL_BASE = path.join(
-  process.env.HOME || "~",
+  homedir(),
   ".config",
   "opencode",
   "skill"
@@ -367,14 +368,17 @@ export const cleanupStaleSymlinks = cleanupStaleInstalls
  */
 export function hasLocalConflict(skillName: string): boolean {
   const localSkillPath = path.join(SKILL_BASE, skillName)
-  
-  // Check if the path exists and is NOT inside _plugins
-  if (fs.existsSync(localSkillPath)) {
-    const realPath = fs.realpathSync(localSkillPath)
-    return !realPath.includes("_plugins")
-  }
-  
-  return false
+  if (!fs.existsSync(localSkillPath)) return false
+
+  const realPath = fs.realpathSync(localSkillPath)
+  const resolvedPluginsDir = fs.existsSync(PLUGINS_DIR)
+    ? fs.realpathSync(PLUGINS_DIR)
+    : PLUGINS_DIR
+
+  // A skill is "local" (conflicts) if its real path is NOT inside the
+  // plugin-managed directory. Use path-prefix comparison, not substring —
+  // prevents false positives where skill "my_plugins" matches "_plugins".
+  return !(realPath === resolvedPluginsDir || realPath.startsWith(resolvedPluginsDir + path.sep))
 }
 
 /**

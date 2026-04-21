@@ -97,7 +97,7 @@ async function performSync(
     }
 
     const skillCount = skillsToInstall.length
-    const status = result.updated ? "✓" : "✓"
+    const status = result.updated ? "↻" : "✓"
     log(`${status} ${result.shortName} (${result.ref}) - ${skillCount} skills`)
   }
 
