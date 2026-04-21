@@ -198,10 +198,20 @@ export async function discoverSkills(repoPath: string): Promise<SkillInfo[]> {
       
       const fullPath = path.join(dir, entry.name)
       
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         const skillMdPath = path.join(fullPath, "SKILL.md")
         
-        if (fs.existsSync(skillMdPath)) {
+        let skillMdStat: fs.Stats
+        try {
+          skillMdStat = fs.lstatSync(skillMdPath)
+          if (!skillMdStat.isFile()) continue // Skip symlinked SKILL.md
+        } catch {
+          // SKILL.md does not exist - recurse into subdirectory
+          findSkills(fullPath)
+          continue
+        }
+        
+        if (skillMdStat.isFile()) {
           // Extract skill name from the directory path relative to skill/
           const relativePath = path.relative(skillDir, fullPath)
           const skillName = relativePath.replace(/\//g, "-")
@@ -223,9 +233,6 @@ export async function discoverSkills(repoPath: string): Promise<SkillInfo[]> {
             path: fullPath,
             description,
           })
-        } else {
-          // Recurse into subdirectory
-          findSkills(fullPath)
         }
       }
     }
@@ -298,9 +305,9 @@ export async function discoverAgents(repoPath: string): Promise<AgentInfo[]> {
       
       const fullPath = path.join(dir, entry.name)
       
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         findAgents(fullPath, depth + 1)
-      } else if (entry.name.toLowerCase().endsWith(".md")) {
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
         // Check file size before reading
         try {
           const stats = fs.statSync(fullPath)
@@ -456,9 +463,9 @@ export async function discoverCommands(repoPath: string): Promise<CommandInfo[]>
       
       const fullPath = path.join(dir, entry.name)
       
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         findCommands(fullPath, depth + 1)
-      } else if (entry.name.toLowerCase().endsWith(".md")) {
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
         // Check file size before reading
         try {
           const stats = fs.statSync(fullPath)
@@ -614,9 +621,9 @@ export async function discoverPlugins(repoPath: string, repoShortName: string): 
       
       const fullPath = path.join(dir, entry.name)
       
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
         findPlugins(fullPath, depth + 1)
-      } else if (entry.name.toLowerCase().endsWith(".ts") || entry.name.toLowerCase().endsWith(".js")) {
+      } else if (entry.isFile() && (entry.name.toLowerCase().endsWith(".ts") || entry.name.toLowerCase().endsWith(".js"))) {
         // Check file size before processing
         try {
           const stats = fs.statSync(fullPath)
