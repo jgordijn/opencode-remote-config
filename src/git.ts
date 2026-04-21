@@ -18,6 +18,37 @@ const CACHE_BASE = path.join(
   "repos"
 )
 
+/** Timeout for git operations (clone, fetch, checkout, pull) */
+const GIT_TIMEOUT_MS = 60_000
+
+class TimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(`${operation} timed out after ${timeoutMs}ms`)
+    this.name = "TimeoutError"
+  }
+}
+
+async function withTimeout<T>(
+  operation: string,
+  promise: Promise<T>,
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<T> {
+  // Suppress post-race rejections: if `promise` rejects after `timeoutPromise`
+  // wins the race, the rejection becomes unhandled. Attaching a no-op catch
+  // prevents the Node/Bun unhandledRejection warning.
+  promise.catch(() => {})
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(operation, timeoutMs)), timeoutMs)
+  })
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Check if a URL is a file:// URL (local directory)
  */
@@ -83,14 +114,40 @@ export function isCloned(repoPath: string): boolean {
 }
 
 /**
- * Clone a repository (full clone, not shallow)
+ * Check if a ref looks like a full commit SHA (40 hex chars) or abbreviated (7-39 hex).
+ * Used to decide whether to use targeted SHA fetch vs branch/tag checkout.
  */
-async function cloneRepo(url: string, repoPath: string): Promise<void> {
+function isCommitSha(ref: string): boolean {
+  return /^[0-9a-f]{7,40}$/.test(ref)
+}
+
+/**
+ * Clone a repository using shallow clone (--depth=1) for minimal data transfer.
+ *
+ * Only fetches a single commit and its tree/blobs. For branch/tag refs, uses
+ * --branch to clone the right ref directly. For bare SHAs, clones the default
+ * branch shallowly then does a targeted fetch of the specific commit.
+ */
+async function cloneRepo(url: string, repoPath: string, ref?: string): Promise<void> {
   // Ensure parent directory exists
   fs.mkdirSync(path.dirname(repoPath), { recursive: true })
-  
-  const result = await $`git clone ${url} ${repoPath}`.quiet()
-  
+
+  let result
+  if (ref && !isCommitSha(ref)) {
+    // Branch or tag — clone directly at that ref, single commit only
+    result = await withTimeout(
+      `git clone ${url}`,
+      $`git clone --depth=1 --single-branch --branch ${ref} ${url} ${repoPath}`.quiet(),
+    )
+  } else {
+    // No ref (default branch) or a commit SHA — shallow clone default branch.
+    // For SHAs, we'll do a targeted fetch after clone in fetchAndCheckout.
+    result = await withTimeout(
+      `git clone ${url}`,
+      $`git clone --depth=1 --single-branch ${url} ${repoPath}`.quiet(),
+    )
+  }
+
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim()
     const stdout = result.stdout.toString().trim()
@@ -101,37 +158,65 @@ async function cloneRepo(url: string, repoPath: string): Promise<void> {
 }
 
 /**
- * Fetch updates and checkout a specific ref
+ * Fetch updates and checkout a specific ref, using shallow fetch (--depth=1)
+ * to minimise data transfer.
+ *
+ * Strategy by ref type:
+ * - No ref: shallow-fetch the current branch tip, fast-forward
+ * - Branch/tag: shallow-fetch that ref, checkout, fast-forward if branch
+ * - Commit SHA: targeted shallow-fetch of that exact commit, checkout FETCH_HEAD
  */
 async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean> {
   // Get current commit before fetch
   const beforeCommit = await $`git -C ${repoPath} rev-parse HEAD`.quiet()
   const beforeHash = beforeCommit.stdout.toString().trim()
-  
-  // Fetch all updates
-  const fetchResult = await $`git -C ${repoPath} fetch --all --prune`.quiet()
-  if (fetchResult.exitCode !== 0) {
-    const stderr = fetchResult.stderr.toString().trim()
-    const stdout = fetchResult.stdout.toString().trim()
-    const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${fetchResult.exitCode}`
-    throw new Error(`git fetch failed: ${output}`)
-  }
-  
-  if (ref) {
-    // Checkout specific ref (branch, tag, or commit)
-    const checkoutResult = await $`git -C ${repoPath} checkout ${ref}`.quiet()
-    
+
+  if (ref && isCommitSha(ref)) {
+    // Targeted fetch of a specific commit SHA. This fetches exactly one
+    // commit + its tree/blobs, even in a shallow repo. Requires git 2.5+.
+    const fetchResult = await withTimeout(
+      `git fetch sha ${ref}`,
+      $`git -C ${repoPath} fetch --depth=1 origin ${ref}`.quiet(),
+    )
+    if (fetchResult.exitCode !== 0) {
+      const stderr = fetchResult.stderr.toString().trim()
+      const stdout = fetchResult.stdout.toString().trim()
+      const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${fetchResult.exitCode}`
+      throw new Error(`git fetch ${ref} failed: ${output}`)
+    }
+
+    const checkoutResult = await $`git -C ${repoPath} checkout FETCH_HEAD`.quiet()
     if (checkoutResult.exitCode !== 0) {
       const stderr = checkoutResult.stderr.toString().trim()
       const stdout = checkoutResult.stdout.toString().trim()
       const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${checkoutResult.exitCode}`
       throw new Error(`git checkout ${ref} failed: ${output}`)
     }
-    
-    // If it's a branch, pull latest
+  } else if (ref) {
+    // Branch or tag — shallow-fetch that specific ref
+    const fetchResult = await withTimeout(
+      "git fetch",
+      $`git -C ${repoPath} fetch --depth=1 origin ${ref}`.quiet(),
+    )
+    if (fetchResult.exitCode !== 0) {
+      const stderr = fetchResult.stderr.toString().trim()
+      const stdout = fetchResult.stdout.toString().trim()
+      const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${fetchResult.exitCode}`
+      throw new Error(`git fetch failed: ${output}`)
+    }
+
+    const checkoutResult = await $`git -C ${repoPath} checkout ${ref}`.quiet()
+    if (checkoutResult.exitCode !== 0) {
+      const stderr = checkoutResult.stderr.toString().trim()
+      const stdout = checkoutResult.stdout.toString().trim()
+      const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${checkoutResult.exitCode}`
+      throw new Error(`git checkout ${ref} failed: ${output}`)
+    }
+
+    // If it's a branch, pull latest (fast-forward only)
     const isBranch = await $`git -C ${repoPath} symbolic-ref -q HEAD`.quiet()
     if (isBranch.exitCode === 0) {
-      const pullResult = await $`git -C ${repoPath} pull --ff-only`.quiet()
+      const pullResult = await $`git -C ${repoPath} pull --depth=1 --ff-only`.quiet()
       if (pullResult.exitCode !== 0) {
         const stderr = pullResult.stderr.toString().trim()
         const stdout = pullResult.stdout.toString().trim()
@@ -140,19 +225,30 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
       }
     }
   } else {
-    // No ref specified, checkout default branch and pull
+    // No ref specified — shallow-fetch current branch tip and fast-forward
+    const fetchResult = await withTimeout(
+      "git fetch",
+      $`git -C ${repoPath} fetch --depth=1`.quiet(),
+    )
+    if (fetchResult.exitCode !== 0) {
+      const stderr = fetchResult.stderr.toString().trim()
+      const stdout = fetchResult.stdout.toString().trim()
+      const output = [stderr, stdout].filter(Boolean).join("\n") || `exit code ${fetchResult.exitCode}`
+      throw new Error(`git fetch failed: ${output}`)
+    }
+
     const defaultBranch = await $`git -C ${repoPath} symbolic-ref refs/remotes/origin/HEAD`.quiet()
     if (defaultBranch.exitCode === 0) {
       const branch = defaultBranch.stdout.toString().trim().replace("refs/remotes/origin/", "")
       await $`git -C ${repoPath} checkout ${branch}`.quiet()
-      await $`git -C ${repoPath} pull --ff-only`.quiet()
+      await $`git -C ${repoPath} pull --depth=1 --ff-only`.quiet()
     }
   }
-  
+
   // Get commit after checkout
   const afterCommit = await $`git -C ${repoPath} rev-parse HEAD`.quiet()
   const afterHash = afterCommit.stdout.toString().trim()
-  
+
   return beforeHash !== afterHash
 }
 
@@ -757,12 +853,14 @@ async function syncGitRepository(config: RepositoryConfig): Promise<SyncResult> 
   
   try {
     if (!isCloned(repoPath)) {
-      // Clone the repository
-      await cloneRepo(config.url, repoPath)
+      // Shallow clone — passes ref so cloneRepo can use --branch for
+      // branches/tags (clones directly at the right ref in one step).
+      await cloneRepo(config.url, repoPath, config.ref)
       updated = true
-      
-      // Checkout specific ref if provided
-      if (config.ref) {
+
+      // For SHA refs, cloneRepo clones the default branch; we still need
+      // a targeted fetch + checkout to land on the right commit.
+      if (config.ref && isCommitSha(config.ref)) {
         await fetchAndCheckout(repoPath, config.ref)
       }
     } else {
@@ -834,12 +932,8 @@ async function syncGitRepository(config: RepositoryConfig): Promise<SyncResult> 
 export async function syncRepositories(
   configs: RepositoryConfig[]
 ): Promise<SyncResult[]> {
-  const results: SyncResult[] = []
-  
-  for (const config of configs) {
-    const result = await syncRepository(config)
-    results.push(result)
-  }
-  
-  return results
+  // Sync repositories in parallel. Each syncRepository call handles its
+  // own errors and returns a SyncResult with an `error` field on failure,
+  // so one bad repo doesn't reject the whole batch.
+  return Promise.all(configs.map((config) => syncRepository(config)))
 }
