@@ -18,19 +18,37 @@ describe("git", () => {
   })
 
   describe("fileUrlToPath", () => {
-    test("converts file:/// URL to absolute path", () => {
-      expect(fileUrlToPath("file:///path/to/repo")).toBe("/path/to/repo")
+    test("converts file:// URL inside home to absolute path", () => {
+      const home = os.homedir()
+      expect(fileUrlToPath(`file://${home}/my-skills`)).toBe(path.join(home, "my-skills"))
     })
 
-    test("converts file:// URL to absolute path", () => {
-      // file://path becomes /path after removing file://
-      const result = fileUrlToPath("file://path/to/repo")
-      expect(result).toContain("path/to/repo")
+    test("expands tilde to homedir", () => {
+      const home = os.homedir()
+      expect(fileUrlToPath("file://~/my-skills")).toBe(path.join(home, "my-skills"))
     })
 
-    test("resolves relative paths", () => {
-      const result = fileUrlToPath("file://./relative/path")
-      expect(path.isAbsolute(result)).toBe(true)
+    test("rejects paths outside home directory", () => {
+      expect(() => fileUrlToPath("file:///etc")).toThrow(/allowed path/)
+      expect(() => fileUrlToPath("file:///path/to/repo")).toThrow(/allowed path/)
+    })
+
+    test("rejects relative traversal escaping home", () => {
+      const home = os.homedir()
+      expect(() => fileUrlToPath(`file://${home}/a/b/../../../..`)).toThrow(/allowed path/)
+    })
+
+    test("respects OPENCODE_REMOTE_CONFIG_ALLOW_PATHS", () => {
+      const original = process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS
+      try {
+        process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS = "/tmp"
+        const tmpDir = fs.mkdtempSync(path.join("/tmp", "test-fileurl-"))
+        expect(fileUrlToPath(`file://${tmpDir}`)).toBe(tmpDir)
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      } finally {
+        if (original === undefined) delete process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS
+        else process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS = original
+      }
     })
   })
 
@@ -1388,12 +1406,18 @@ template: Mixed
 
   describe("syncRepository (local directory)", () => {
     let tmpDir: string
+    let originalAllowPaths: string | undefined
 
     beforeEach(() => {
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-sync-"))
+      // Allow file:// URLs pointing at the test tmpdir (outside home)
+      originalAllowPaths = process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS
+      process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS = os.tmpdir()
     })
 
     afterEach(() => {
+      if (originalAllowPaths === undefined) delete process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS
+      else process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS = originalAllowPaths
       if (fs.existsSync(tmpDir)) {
         fs.rmSync(tmpDir, { recursive: true })
       }
@@ -1510,7 +1534,8 @@ template: Mixed
     })
 
     test("returns empty instructions for non-existent directory", async () => {
-      const result = await syncRepository({ url: "file:///non/existent/path" })
+      const home = os.homedir()
+      const result = await syncRepository({ url: `file://${home}/.opencode-nonexistent-test-path` })
       expect(result.instructions).toEqual([])
       expect(result.error).toBeDefined()
     })
