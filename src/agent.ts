@@ -44,8 +44,8 @@ export const AgentConfigSchema = z.object({
   description: z.string().optional(),
   /** Agent mode: subagent, primary, or all */
   mode: z.enum(["subagent", "primary", "all"]).optional(),
-  /** Additional options passed to the agent */
-  options: z.record(z.string(), z.any()).optional(),
+  /** Additional options passed to the agent — keys and values must be strings */
+  options: z.record(z.string(), z.string()).optional(),
   /** Hex color code for the agent (e.g., #FF5733) */
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   /** Maximum number of agentic iterations */
@@ -54,7 +54,7 @@ export const AgentConfigSchema = z.object({
   maxSteps: z.number().int().positive().optional(),
   /** Permission configuration for tools */
   permission: Permission.optional(),
-}).passthrough()  // Allow unknown keys for forward compatibility
+}).strict()  // Reject unknown keys — prevents config injection from malicious repos
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>
 
