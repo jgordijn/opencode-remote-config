@@ -89,7 +89,10 @@ async function cloneRepo(url: string, repoPath: string): Promise<void> {
   // Ensure parent directory exists
   fs.mkdirSync(path.dirname(repoPath), { recursive: true })
   
-  const result = await $`git clone ${url} ${repoPath}`.quiet()
+  // --no-template prevents --template= injection (the primary code-execution
+  // vector via git hook scripts). The schema-layer validator (PR 2) rejects
+  // leading-dash URLs, and --no-template is defense-in-depth.
+  const result = await $`git clone --no-template ${url} ${repoPath}`.quiet()
   
   if (result.exitCode !== 0) {
     const stderr = result.stderr.toString().trim()
@@ -119,7 +122,9 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
   
   if (ref) {
     // Checkout specific ref (branch, tag, or commit)
-    const checkoutResult = await $`git -C ${repoPath} checkout ${ref}`.quiet()
+    // -- separates flags from the ref argument, preventing a ref starting
+    // with '-' from being interpreted as a git flag.
+    const checkoutResult = await $`git -C ${repoPath} checkout -- ${ref}`.quiet()
     
     if (checkoutResult.exitCode !== 0) {
       const stderr = checkoutResult.stderr.toString().trim()
@@ -144,7 +149,7 @@ async function fetchAndCheckout(repoPath: string, ref?: string): Promise<boolean
     const defaultBranch = await $`git -C ${repoPath} symbolic-ref refs/remotes/origin/HEAD`.quiet()
     if (defaultBranch.exitCode === 0) {
       const branch = defaultBranch.stdout.toString().trim().replace("refs/remotes/origin/", "")
-      await $`git -C ${repoPath} checkout ${branch}`.quiet()
+      await $`git -C ${repoPath} checkout -- ${branch}`.quiet()
       await $`git -C ${repoPath} pull --ff-only`.quiet()
     }
   }
