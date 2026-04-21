@@ -40,18 +40,14 @@ describe("AgentConfigSchema", () => {
       expect(result.success).toBe(true)
     })
 
-    test("allows unknown fields via passthrough", () => {
+    test("rejects unknown fields (strict mode — prevents config injection)", () => {
       const config = {
         description: "Test",
         customField: "custom value",
         anotherCustom: 123,
       }
       const result = AgentConfigSchema.safeParse(config)
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.customField).toBe("custom value")
-        expect(result.data.anotherCustom).toBe(123)
-      }
+      expect(result.success).toBe(false)
     })
   })
 
@@ -231,6 +227,31 @@ You follow best practices.`,
 
     test("accepts empty string prompt", () => {
       const result = AgentConfigSchema.safeParse({ prompt: "" })
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe("strict mode — rejects unknown fields", () => {
+    test("rejects unknown top-level fields", () => {
+      const result = AgentConfigSchema.safeParse({
+        description: "hi",
+        mode: "subagent",
+        evil_field: "nope",
+      })
+      expect(result.success).toBe(false)
+    })
+
+    test("accepts all documented fields", () => {
+      const result = AgentConfigSchema.safeParse({
+        description: "a",
+        mode: "subagent",
+        model: "anthropic/claude-3-5-sonnet",
+        temperature: 0.7,
+        top_p: 0.9,
+        color: "#FF5733",
+        tools: { bash: true, edit: false },
+        disable: false,
+      })
       expect(result.success).toBe(true)
     })
   })
