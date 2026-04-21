@@ -1,6 +1,7 @@
 import { $ } from "bun"
 import * as path from "path"
 import * as fs from "fs"
+import { homedir } from "os"
 import matter from "gray-matter"
 import { getRepoId, shouldImport, type RepositoryConfig } from "./config"
 import { AgentConfigSchema, type AgentInfo } from "./agent"
@@ -11,7 +12,7 @@ import { log, logError, logWarn } from "./logging"
 
 /** Base directory for cloned repositories */
 const CACHE_BASE = path.join(
-  process.env.HOME || "~",
+  homedir(),
   ".cache",
   "opencode",
   "remote-config",
@@ -26,13 +27,60 @@ export function isFileUrl(url: string): boolean {
 }
 
 /**
- * Convert a file:// URL to a local path
+ * Convert a file:// URL to a local path.
+ *
+ * Security: Only paths within the user's home directory (or directories
+ * listed in OPENCODE_REMOTE_CONFIG_ALLOW_PATHS) are permitted. This
+ * prevents a malicious project-level config from pointing at sensitive
+ * directories like /etc, ~/.ssh, or the filesystem root.
+ *
+ * The OPENCODE_REMOTE_CONFIG_ALLOW_PATHS env var accepts a colon-separated
+ * list of absolute paths (e.g., "/opt/skills:/usr/local/share/skills").
+ * This is an escape hatch for CI, Docker, and shared-install environments.
  */
 export function fileUrlToPath(url: string): string {
-  // Handle file:///path/to/dir and file://path/to/dir
-  const withoutPrefix = url.replace(/^file:\/\//, "")
-  // Normalize the path
-  return path.resolve(withoutPrefix)
+  if (!url.startsWith("file://")) {
+    throw new Error("fileUrlToPath called with non-file:// URL")
+  }
+
+  // Handle tilde expansion: file://~/path → file:///home/user/path
+  const home = homedir()
+  const expanded = url
+    .replace(/^file:\/\/~\//, `file://${home}/`)
+    .replace(/^file:\/\/~$/, `file://${home}`)
+
+  // Use WHATWG URL class for RFC-correct parsing (handles authority,
+  // percent-encoding, and edge cases better than string surgery).
+  let parsed: URL
+  try {
+    parsed = new URL(expanded)
+  } catch {
+    throw new Error(`Invalid file:// URL: ${url}`)
+  }
+
+  // URL.pathname gives the decoded, absolute path
+  const resolved = path.resolve(parsed.pathname)
+
+  // Build the list of allowed path prefixes
+  const allowedPaths = [home]
+  const envPaths = process.env.OPENCODE_REMOTE_CONFIG_ALLOW_PATHS
+  if (envPaths) {
+    for (const p of envPaths.split(":").filter(Boolean)) {
+      allowedPaths.push(path.resolve(p))
+    }
+  }
+
+  const isAllowed = allowedPaths.some(
+    (allowed) => resolved === allowed || resolved.startsWith(allowed + path.sep),
+  )
+
+  if (!isAllowed) {
+    throw new Error(
+      `file:// URL must point within an allowed path (${allowedPaths.join(", ")}); got: ${resolved}`,
+    )
+  }
+
+  return resolved
 }
 
 /**
