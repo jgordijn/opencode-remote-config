@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # Weekly schedule inherently delays updates by up to 7 days after
+    # publication, providing a natural buffer against compromised fresh
+    # npm publishes (the event-stream / node-ipc class of attack).
+    # Combine with branch protection rules requiring reviewer approval.
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
