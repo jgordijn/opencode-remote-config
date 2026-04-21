@@ -149,6 +149,29 @@ describe("config", () => {
       })
       expect(result.success).toBe(false)
     })
+
+    describe("trustPlugins flag", () => {
+      test("defaults to false", () => {
+        const result = RepositoryConfigSchema.safeParse({
+          url: "https://github.com/org/repo.git",
+        })
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data.trustPlugins).toBe(false)
+        }
+      })
+
+      test("accepts explicit true", () => {
+        const result = RepositoryConfigSchema.safeParse({
+          url: "https://github.com/org/repo.git",
+          trustPlugins: true,
+        })
+        expect(result.success).toBe(true)
+        if (result.success) {
+          expect(result.data.trustPlugins).toBe(true)
+        }
+      })
+    })
   })
 
   describe("RemoteSkillsConfigSchema", () => {

@@ -79,6 +79,9 @@ export const RepositoryConfigSchema = z.object({
    * If omitted, imports all instructions from the repository's manifest.
    */
   instructions: ImportConfigSchema.optional(),
+  
+  /** Security gate: remote plugins are executable code. Must be explicitly enabled per repository. Defaults to false. */
+  trustPlugins: z.boolean().default(false),
 }).strict()
 
 /**

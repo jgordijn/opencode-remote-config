@@ -116,6 +116,11 @@
         "instructions": {
           "description": "Instructions to import from manifest.json. Use '*' for all, { include: [...] } for specific instructions, or { exclude: [...] } to import all except listed",
           "$ref": "#/definitions/importConfig"
+        },
+        "trustPlugins": {
+          "type": "boolean",
+          "description": "Must be set to true to allow remote plugins (executable code) from this repository. Defaults to false.",
+          "default": false
         }
       }
     }
